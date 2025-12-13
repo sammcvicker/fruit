@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use glob::Pattern;
+
 use crate::comments::extract_first_comment;
 use crate::git::GitFilter;
 
@@ -190,22 +192,9 @@ impl TreeWalker {
 }
 
 fn glob_match(pattern: &str, name: &str) -> bool {
-    // Handle *substring* pattern (contains)
-    if pattern.starts_with('*') && pattern.ends_with('*') && pattern.len() > 2 {
-        let middle = &pattern[1..pattern.len() - 1];
-        return name.contains(middle);
-    }
-    // Handle *suffix pattern
-    if pattern.starts_with('*') && pattern.len() > 1 {
-        let suffix = &pattern[1..];
-        return name.ends_with(suffix);
-    }
-    // Handle prefix* pattern
-    if pattern.ends_with('*') && pattern.len() > 1 {
-        let prefix = &pattern[..pattern.len() - 1];
-        return name.starts_with(prefix);
-    }
-    pattern == name
+    Pattern::new(pattern)
+        .map(|p| p.matches(name))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -214,6 +203,7 @@ mod tests {
 
     #[test]
     fn test_glob_match() {
+        // Basic patterns
         assert!(glob_match("*.rs", "main.rs"));
         assert!(glob_match("*.rs", "lib.rs"));
         assert!(!glob_match("*.rs", "main.py"));
@@ -221,5 +211,19 @@ mod tests {
         assert!(!glob_match("test*", "foo_test"));
         assert!(glob_match("exact", "exact"));
         assert!(!glob_match("exact", "notexact"));
+
+        // Single character wildcard
+        assert!(glob_match("test?.rs", "test1.rs"));
+        assert!(glob_match("test?.rs", "testa.rs"));
+        assert!(!glob_match("test?.rs", "test12.rs"));
+
+        // Character classes
+        assert!(glob_match("[abc].txt", "a.txt"));
+        assert!(glob_match("[abc].txt", "b.txt"));
+        assert!(!glob_match("[abc].txt", "d.txt"));
+
+        // Character ranges
+        assert!(glob_match("[a-z].txt", "x.txt"));
+        assert!(!glob_match("[a-z].txt", "X.txt"));
     }
 }
