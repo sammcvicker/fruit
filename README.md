@@ -1,6 +1,8 @@
 # Fruit
 
-A smarter `tree` for developers. Fruit is a drop-in replacement for `tree` that understands your git repository and shows you what your code does at a glance.
+Tree but just the juicy bits.
+
+A `tree` replacement that understands your git repository and shows you what your code does at a glance.
 
 ## Features
 

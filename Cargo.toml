@@ -2,7 +2,7 @@
 name = "fruit"
 version = "0.1.0"
 edition = "2024"
-description = "A tree command that respects .gitignore and shows file comments"
+description = "Tree but just the juicy bits"
 license = "MIT"
 
 [dependencies]
