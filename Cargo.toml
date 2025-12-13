@@ -1,0 +1,17 @@
+[package]
+name = "fruit"
+version = "0.1.0"
+edition = "2024"
+description = "A tree command that respects .gitignore and shows file comments"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+git2 = "0.19"
+termcolor = "1.4"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
