@@ -24,6 +24,12 @@ pub fn extract_first_comment(path: &Path) -> Option<String> {
         "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" => extract_c_comment(&content),
         "rb" => extract_ruby_comment(&content),
         "sh" | "bash" | "zsh" => extract_shell_comment(&content),
+        // Java, Kotlin, Swift use JavaDoc-style /** */ comments
+        "java" | "kt" | "kts" | "swift" => extract_javadoc_comment(&content),
+        // PHP uses PHPDoc /** */ and also # comments
+        "php" => extract_php_comment(&content),
+        // C# uses /// XML doc comments
+        "cs" => extract_csharp_comment(&content),
         _ => None,
     }
 }
@@ -306,6 +312,139 @@ fn extract_shell_comment(content: &str) -> Option<String> {
     None
 }
 
+fn extract_javadoc_comment(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+
+    // Check for JavaDoc/KDoc/Swift doc /** ... */
+    if trimmed.starts_with("/**") {
+        if let Some(end) = trimmed.find("*/") {
+            let block = &trimmed[3..end];
+            let cleaned: Vec<&str> = block
+                .lines()
+                .map(|l| l.trim().trim_start_matches('*').trim())
+                .filter(|l| !l.is_empty() && !l.starts_with('@'))
+                .collect();
+            if !cleaned.is_empty() {
+                return Some(cleaned.join("\n"));
+            }
+        }
+    }
+
+    // Check for // comments at the top
+    let mut comment_lines = Vec::new();
+    for line in trimmed.lines() {
+        let t = line.trim();
+        if t.starts_with("//") {
+            let comment = t.strip_prefix("//").unwrap_or("").trim();
+            comment_lines.push(comment);
+        } else if t.is_empty() {
+            continue;
+        } else {
+            break;
+        }
+    }
+    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
+        return Some(comment_lines.join("\n"));
+    }
+
+    None
+}
+
+fn extract_php_comment(content: &str) -> Option<String> {
+    // Skip <?php tag
+    let content = content.trim_start();
+    let content = if content.starts_with("<?php") {
+        &content[5..]
+    } else if content.starts_with("<?") {
+        &content[2..]
+    } else {
+        content
+    };
+    let trimmed = content.trim_start();
+
+    // Check for PHPDoc /** ... */
+    if trimmed.starts_with("/**") {
+        if let Some(end) = trimmed.find("*/") {
+            let block = &trimmed[3..end];
+            let cleaned: Vec<&str> = block
+                .lines()
+                .map(|l| l.trim().trim_start_matches('*').trim())
+                .filter(|l| !l.is_empty() && !l.starts_with('@'))
+                .collect();
+            if !cleaned.is_empty() {
+                return Some(cleaned.join("\n"));
+            }
+        }
+    }
+
+    // Check for // or # comments at the top
+    let mut comment_lines = Vec::new();
+    for line in trimmed.lines() {
+        let t = line.trim();
+        if t.starts_with("//") {
+            let comment = t.strip_prefix("//").unwrap_or("").trim();
+            comment_lines.push(comment);
+        } else if t.starts_with('#') && !t.starts_with("#[") {
+            let comment = t.strip_prefix('#').unwrap_or("").trim();
+            comment_lines.push(comment);
+        } else if t.is_empty() {
+            continue;
+        } else {
+            break;
+        }
+    }
+    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
+        return Some(comment_lines.join("\n"));
+    }
+
+    None
+}
+
+fn extract_csharp_comment(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+
+    // C# uses /// for XML doc comments
+    let mut doc_lines = Vec::new();
+    for line in trimmed.lines() {
+        let t = line.trim();
+        if t.starts_with("///") {
+            let comment = t.strip_prefix("///").unwrap_or("").trim();
+            // Skip XML tags like <summary>, </summary>, <param>, etc.
+            if !comment.starts_with('<') && !comment.ends_with('>') {
+                doc_lines.push(comment);
+            }
+        } else if t.starts_with("//") {
+            // Regular comment
+            let comment = t.strip_prefix("//").unwrap_or("").trim();
+            doc_lines.push(comment);
+        } else if t.is_empty() || t.starts_with("using ") || t.starts_with("[") {
+            continue;
+        } else {
+            break;
+        }
+    }
+    if !doc_lines.is_empty() && doc_lines.iter().any(|l| !l.is_empty()) {
+        return Some(doc_lines.join("\n"));
+    }
+
+    // Also check for /* */ block comments
+    if trimmed.starts_with("/*") {
+        if let Some(end) = trimmed.find("*/") {
+            let block = &trimmed[2..end];
+            let cleaned: Vec<&str> = block
+                .lines()
+                .map(|l| l.trim().trim_start_matches('*').trim())
+                .filter(|l| !l.is_empty())
+                .collect();
+            if !cleaned.is_empty() {
+                return Some(cleaned.join("\n"));
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,6 +549,47 @@ function main() {}
         assert_eq!(
             extract_ruby_comment(content),
             Some("User authentication module".to_string())
+        );
+    }
+
+    #[test]
+    fn test_javadoc_comment() {
+        let content = r#"/**
+ * Main application class
+ * @author Test
+ */
+public class Main {}
+"#;
+        assert_eq!(
+            extract_javadoc_comment(content),
+            Some("Main application class".to_string())
+        );
+    }
+
+    #[test]
+    fn test_php_comment() {
+        let content = r#"<?php
+/**
+ * User authentication service
+ */
+class AuthService {}
+"#;
+        assert_eq!(
+            extract_php_comment(content),
+            Some("User authentication service".to_string())
+        );
+    }
+
+    #[test]
+    fn test_csharp_comment() {
+        let content = r#"/// <summary>
+/// Main program entry point
+/// </summary>
+public class Program {}
+"#;
+        assert_eq!(
+            extract_csharp_comment(content),
+            Some("Main program entry point".to_string())
         );
     }
 }
