@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "Tree but just the juicy bits"
 license = "MIT"
+repository = "https://github.com/sammcvicker/fruit"
+keywords = ["tree", "cli", "git", "directory"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
