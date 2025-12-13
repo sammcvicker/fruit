@@ -8,6 +8,7 @@ pub struct GitFilter {
     #[allow(dead_code)]
     repo: Repository,
     tracked_files: HashSet<PathBuf>,
+    tracked_dirs: HashSet<PathBuf>,
     repo_root: PathBuf,
 }
 
@@ -17,9 +18,23 @@ impl GitFilter {
         let repo_root = repo.workdir()?.to_path_buf();
         let tracked_files = Self::collect_tracked_files(&repo, &repo_root)?;
 
+        // Pre-compute all directories containing tracked files for O(1) lookup
+        let mut tracked_dirs = HashSet::new();
+        for file_path in &tracked_files {
+            let mut current = file_path.parent();
+            while let Some(dir) = current {
+                if !tracked_dirs.insert(dir.to_path_buf()) {
+                    // Already seen this directory, ancestors are also already added
+                    break;
+                }
+                current = dir.parent();
+            }
+        }
+
         Some(Self {
             repo,
             tracked_files,
+            tracked_dirs,
             repo_root,
         })
     }
@@ -58,16 +73,14 @@ impl GitFilter {
             Err(_) => path.to_path_buf(),
         };
 
-        // Direct file check
+        // Direct file check - O(1)
         if self.tracked_files.contains(&path) {
             return true;
         }
 
-        // Check if it's a directory containing tracked files
+        // Directory check - O(1) using pre-computed set
         if path.is_dir() {
-            return self.tracked_files.iter().any(|tracked| {
-                tracked.starts_with(&path)
-            });
+            return self.tracked_dirs.contains(&path);
         }
 
         false
