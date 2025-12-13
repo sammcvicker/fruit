@@ -284,7 +284,8 @@ fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
 }
 
-/// Wrap text to fit within max_width, preferring word boundaries
+/// Wrap text to fit within max_width, preferring word boundaries.
+/// Uses character count (not byte count) to properly handle UTF-8.
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return vec![text.to_string()];
@@ -292,38 +293,55 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 
     let mut lines = Vec::new();
     let mut current_line = String::new();
+    let mut current_len = 0; // Character count of current_line
 
     for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+
         if current_line.is_empty() {
             // First word on line - may need character wrap if too long
-            if word.len() > max_width {
+            if word_len > max_width {
                 // Character wrap for very long words
-                let mut remaining = word;
-                while remaining.len() > max_width {
-                    lines.push(remaining[..max_width].to_string());
-                    remaining = &remaining[max_width..];
+                let mut chars = word.chars().peekable();
+                while chars.peek().is_some() {
+                    let chunk: String = chars.by_ref().take(max_width).collect();
+                    let chunk_len = chunk.chars().count();
+                    if chars.peek().is_some() {
+                        lines.push(chunk);
+                    } else {
+                        current_line = chunk;
+                        current_len = chunk_len;
+                    }
                 }
-                current_line = remaining.to_string();
             } else {
                 current_line = word.to_string();
+                current_len = word_len;
             }
-        } else if current_line.len() + 1 + word.len() <= max_width {
+        } else if current_len + 1 + word_len <= max_width {
             // Word fits on current line
             current_line.push(' ');
             current_line.push_str(word);
+            current_len += 1 + word_len;
         } else {
             // Start new line
-            lines.push(current_line);
+            lines.push(std::mem::take(&mut current_line));
+            current_len = 0;
             // Handle long words
-            if word.len() > max_width {
-                let mut remaining = word;
-                while remaining.len() > max_width {
-                    lines.push(remaining[..max_width].to_string());
-                    remaining = &remaining[max_width..];
+            if word_len > max_width {
+                let mut chars = word.chars().peekable();
+                while chars.peek().is_some() {
+                    let chunk: String = chars.by_ref().take(max_width).collect();
+                    let chunk_len = chunk.chars().count();
+                    if chars.peek().is_some() {
+                        lines.push(chunk);
+                    } else {
+                        current_line = chunk;
+                        current_len = chunk_len;
+                    }
                 }
-                current_line = remaining.to_string();
             } else {
                 current_line = word.to_string();
+                current_len = word_len;
             }
         }
     }
@@ -401,5 +419,23 @@ mod tests {
 
         // Should count 1 directory (src) - root is not counted
         assert!(output.contains("1 directories, 3 files"));
+    }
+
+    #[test]
+    fn test_wrap_text_utf8() {
+        // Test that emoji don't cause panics (they're 4 bytes each)
+        let emoji_text = "🎉🎊🎁🎂🎃";
+        let wrapped = wrap_text(emoji_text, 3);
+        assert_eq!(wrapped, vec!["🎉🎊🎁", "🎂🎃"]);
+
+        // Test CJK characters (3 bytes each)
+        let cjk_text = "你好世界";
+        let wrapped = wrap_text(cjk_text, 2);
+        assert_eq!(wrapped, vec!["你好", "世界"]);
+
+        // Test mixed content
+        let mixed = "Hello 世界 🎉";
+        let wrapped = wrap_text(mixed, 8);
+        assert_eq!(wrapped, vec!["Hello 世界", "🎉"]);
     }
 }
