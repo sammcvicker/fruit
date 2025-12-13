@@ -2,7 +2,17 @@
 
 use std::path::Path;
 
+/// Maximum file size for comment extraction (1MB)
+const MAX_FILE_SIZE: u64 = 1_000_000;
+
 pub fn extract_first_comment(path: &Path) -> Option<String> {
+    // Skip files that are too large to avoid OOM on large files
+    if let Ok(metadata) = path.metadata() {
+        if metadata.len() > MAX_FILE_SIZE {
+            return None;
+        }
+    }
+
     let extension = path.extension()?.to_str()?;
     let content = std::fs::read_to_string(path).ok()?;
 
