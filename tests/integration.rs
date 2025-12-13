@@ -198,3 +198,51 @@ fn test_directory_file_counts() {
         stdout
     );
 }
+
+#[test]
+fn test_json_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file("main.rs", "//! CLI entry point\nfn main() {}");
+    repo.add_file("src/lib.rs", "//! Library module\npub mod foo;");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--json"]);
+    assert!(success, "fruit --json should succeed");
+
+    // Parse as JSON to verify valid output
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    // Check structure
+    assert_eq!(json["type"], "dir", "root should be a directory");
+    assert!(json["children"].is_array(), "should have children array");
+
+    // Verify files are included with correct structure
+    let children = json["children"].as_array().unwrap();
+    let main_rs = children.iter().find(|c| c["name"] == "main.rs");
+    assert!(main_rs.is_some(), "should include main.rs");
+
+    let main_rs = main_rs.unwrap();
+    assert_eq!(main_rs["type"], "file");
+    assert_eq!(main_rs["comment"], "CLI entry point");
+}
+
+#[test]
+fn test_json_no_comments() {
+    let repo = TestRepo::with_git();
+    repo.add_file("main.rs", "//! Has comment\nfn main() {}");
+    repo.add_file("empty.rs", "fn no_comment() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--json"]);
+    assert!(success);
+
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let children = json["children"].as_array().unwrap();
+
+    // File with comment should have comment field
+    let main_rs = children.iter().find(|c| c["name"] == "main.rs").unwrap();
+    assert!(main_rs["comment"].is_string());
+
+    // File without comment should not have comment field (skip_serializing_if)
+    let empty = children.iter().find(|c| c["name"] == "empty.rs").unwrap();
+    assert!(empty.get("comment").is_none(), "comment should be omitted when None");
+}

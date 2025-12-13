@@ -3,15 +3,18 @@
 use std::path::{Path, PathBuf};
 
 use glob::Pattern;
+use serde::Serialize;
 
 use crate::comments::extract_first_comment;
 use crate::git::GitFilter;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum TreeNode {
     File {
         name: String,
         path: PathBuf,
+        #[serde(skip_serializing_if = "Option::is_none")]
         comment: Option<String>,
     },
     Dir {

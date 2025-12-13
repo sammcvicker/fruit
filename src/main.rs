@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::Parser;
-use fruit::{GitFilter, OutputConfig, TreeFormatter, TreeWalker, WalkerConfig};
+use fruit::{print_json, GitFilter, OutputConfig, TreeFormatter, TreeWalker, WalkerConfig};
 
 #[derive(Parser, Debug)]
 #[command(name = "fruit")]
@@ -46,6 +46,10 @@ struct Args {
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
     wrap: usize,
+
+    /// Output in JSON format
+    #[arg(long = "json")]
+    json: bool,
 }
 
 fn main() {
@@ -86,14 +90,19 @@ fn main() {
         }
     };
 
-    let output_config = OutputConfig {
-        use_color: !args.no_color,
-        show_full_comment: args.full_comment,
-        wrap_width: if args.wrap == 0 { None } else { Some(args.wrap) },
+    let result = if args.json {
+        print_json(&tree)
+    } else {
+        let output_config = OutputConfig {
+            use_color: !args.no_color,
+            show_full_comment: args.full_comment,
+            wrap_width: if args.wrap == 0 { None } else { Some(args.wrap) },
+        };
+        let formatter = TreeFormatter::new(output_config);
+        formatter.print(&tree)
     };
 
-    let formatter = TreeFormatter::new(output_config);
-    if let Err(e) = formatter.print(&tree) {
+    if let Err(e) = result {
         eprintln!("fruit: error writing output: {}", e);
         process::exit(1);
     }
