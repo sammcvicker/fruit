@@ -65,6 +65,8 @@ fn main() {
     if !args.all {
         if let Some(filter) = GitFilter::new(&args.path) {
             walker = walker.with_git_filter(filter);
+        } else {
+            eprintln!("fruit: warning: not a git repository, showing all files");
         }
     }
 
