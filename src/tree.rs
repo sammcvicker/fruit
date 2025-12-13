@@ -64,6 +64,11 @@ impl TreeWalker {
     }
 
     fn walk_dir(&self, path: &Path, depth: usize) -> Option<TreeNode> {
+        // Skip symlinks to prevent infinite loops and directory traversal issues
+        if path.is_symlink() {
+            return None;
+        }
+
         let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
 
         let name = path
