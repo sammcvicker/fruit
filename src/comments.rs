@@ -119,10 +119,7 @@ fn extract_python_docstring(content: &str) -> Option<String> {
                 let doc = after_quote[..end].trim();
                 if !doc.is_empty() {
                     // Return the full docstring, cleaned up
-                    let cleaned: Vec<&str> = doc
-                        .lines()
-                        .map(|l| l.trim())
-                        .collect();
+                    let cleaned: Vec<&str> = doc.lines().map(|l| l.trim()).collect();
                     return Some(cleaned.join("\n"));
                 }
             }
@@ -545,7 +542,8 @@ function main() {}
 
     #[test]
     fn test_ruby_comment() {
-        let content = "# frozen_string_literal: true\n# User authentication module\nclass User\nend";
+        let content =
+            "# frozen_string_literal: true\n# User authentication module\nclass User\nend";
         assert_eq!(
             extract_ruby_comment(content),
             Some("User authentication module".to_string())

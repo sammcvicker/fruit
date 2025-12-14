@@ -140,7 +140,10 @@ impl TreeWalker {
                 {
                     // In dirs_only mode, always show directories
                     // Otherwise, skip truly empty directories (those with no tracked files)
-                    if c.is_empty() && !self.config.dirs_only && !self.has_tracked_files(&entry_path) {
+                    if c.is_empty()
+                        && !self.config.dirs_only
+                        && !self.has_tracked_files(&entry_path)
+                    {
                         continue;
                     }
                 }

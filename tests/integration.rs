@@ -2,7 +2,7 @@
 
 mod harness;
 
-use harness::{run_fruit, TestRepo};
+use harness::{TestRepo, run_fruit};
 
 #[test]
 fn test_basic_tree_output() {
@@ -89,7 +89,11 @@ fn test_dirs_only() {
 
     let (stdout, _stderr, success) = run_fruit(repo.path(), &["-d"]);
     assert!(success);
-    assert!(!stdout.contains("file.rs"), "should not show files: {}", stdout);
+    assert!(
+        !stdout.contains("file.rs"),
+        "should not show files: {}",
+        stdout
+    );
     assert!(stdout.contains("subdir"), "should show directories");
 }
 
@@ -244,5 +248,8 @@ fn test_json_no_comments() {
 
     // File without comment should not have comment field (skip_serializing_if)
     let empty = children.iter().find(|c| c["name"] == "empty.rs").unwrap();
-    assert!(empty.get("comment").is_none(), "comment should be omitted when None");
+    assert!(
+        empty.get("comment").is_none(),
+        "comment should be omitted when None"
+    );
 }

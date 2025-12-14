@@ -6,8 +6,8 @@ use std::process;
 
 use clap::{Parser, ValueEnum};
 use fruit::{
-    print_json, GitFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker,
-    WalkerConfig,
+    GitFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
+    print_json,
 };
 
 /// Color output mode
@@ -152,7 +152,11 @@ fn main() {
         let output_config = OutputConfig {
             use_color: should_use_color(args.color),
             show_full_comment: args.full_comment,
-            wrap_width: if args.wrap == 0 { None } else { Some(args.wrap) },
+            wrap_width: if args.wrap == 0 {
+                None
+            } else {
+                Some(args.wrap)
+            },
         };
         let mut formatter = StreamingFormatter::new(output_config);
 

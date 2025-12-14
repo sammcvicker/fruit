@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Criterion benchmarks for performance testing (#13)
+  - Comment extraction benchmarks for Rust, Python, JavaScript, Go, and Java
+  - Git filter initialization benchmarks (10, 100, 500 files)
+  - `is_tracked` lookup benchmarks for files and directories
+  - Run with `cargo bench`
+- Performance regression test (1000 files under 10 seconds) (#13)
 - Comprehensive edge case and error handling test suite (#14)
   - Symlink handling tests (to file, to directory, to parent, broken, self-referential)
   - Permission error handling tests (unreadable directories and files)

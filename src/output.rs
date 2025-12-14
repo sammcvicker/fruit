@@ -7,8 +7,8 @@ use crate::tree::{StreamingOutput, TreeNode};
 
 /// Print tree node as pretty-printed JSON to stdout.
 pub fn print_json(node: &TreeNode) -> io::Result<()> {
-    let json = serde_json::to_string_pretty(node)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let json =
+        serde_json::to_string_pretty(node).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     println!("{}", json);
     Ok(())
 }
@@ -92,7 +92,9 @@ impl TreeFormatter {
 
                         // Calculate available width for text wrapping
                         let prefix_width = continuation_prefix.chars().count() + padding_len;
-                        let wrap_width = self.config.wrap_width
+                        let wrap_width = self
+                            .config
+                            .wrap_width
                             .map(|w| w.saturating_sub(prefix_width))
                             .filter(|&w| w > 10);
 
@@ -193,7 +195,11 @@ impl TreeFormatter {
                 stdout.reset()?;
 
                 if let Some(c) = comment {
-                    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                    stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(Color::Black))
+                            .set_intense(true),
+                    )?;
                     if self.config.show_full_comment {
                         // Calculate padding for continuation lines
                         let continuation_prefix = if is_last {
@@ -206,7 +212,9 @@ impl TreeFormatter {
 
                         // Calculate available width for text wrapping
                         let prefix_width = continuation_prefix.chars().count() + padding_len;
-                        let wrap_width = self.config.wrap_width
+                        let wrap_width = self
+                            .config
+                            .wrap_width
                             .map(|w| w.saturating_sub(prefix_width))
                             .filter(|&w| w > 10); // Don't wrap if too narrow
 
@@ -228,7 +236,11 @@ impl TreeFormatter {
                                 } else {
                                     stdout.reset()?;
                                     write!(stdout, "{}", continuation_prefix)?;
-                                    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                                    stdout.set_color(
+                                        ColorSpec::new()
+                                            .set_fg(Some(Color::Black))
+                                            .set_intense(true),
+                                    )?;
                                     writeln!(stdout, "{}{}", padding, wrapped_line)?;
                                 }
                             }
@@ -274,7 +286,8 @@ impl TreeFormatter {
 
                 for (i, child) in children.iter().enumerate() {
                     let child_is_last = i == children.len() - 1;
-                    let (d, f) = self.print_node(child, stdout, &new_prefix, child_is_last, false)?;
+                    let (d, f) =
+                        self.print_node(child, stdout, &new_prefix, child_is_last, false)?;
                     dir_count += d;
                     file_count += f;
                     if child.is_dir() {
@@ -347,8 +360,11 @@ impl StreamingOutput for StreamingFormatter {
             self.stdout.reset()?;
 
             if let Some(c) = comment {
-                self.stdout
-                    .set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                self.stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(Color::Black))
+                        .set_intense(true),
+                )?;
                 if self.config.show_full_comment {
                     // Calculate padding for continuation lines
                     let continuation_prefix = if is_last {
@@ -386,7 +402,9 @@ impl StreamingOutput for StreamingFormatter {
                                 self.stdout.reset()?;
                                 write!(self.stdout, "{}", continuation_prefix)?;
                                 self.stdout.set_color(
-                                    ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true),
+                                    ColorSpec::new()
+                                        .set_fg(Some(Color::Black))
+                                        .set_intense(true),
                                 )?;
                                 writeln!(self.stdout, "{}{}", padding, wrapped_line)?;
                             }
@@ -411,7 +429,11 @@ impl StreamingOutput for StreamingFormatter {
 
     fn finish(&mut self, dir_count: usize, file_count: usize) -> io::Result<()> {
         writeln!(self.stdout)?;
-        writeln!(self.stdout, "{} directories, {} files", dir_count, file_count)?;
+        writeln!(
+            self.stdout,
+            "{} directories, {} files",
+            dir_count, file_count
+        )?;
         Ok(())
     }
 }

@@ -421,3 +421,43 @@ fn test_very_narrow_wrap_width() {
     assert!(success, "fruit should handle narrow wrap width");
     assert!(stdout.contains("comment.rs"));
 }
+
+// ============================================================================
+// Performance Regression Tests
+// ============================================================================
+
+#[test]
+fn test_performance_1000_files() {
+    use std::time::Instant;
+
+    let repo = TestRepo::with_git();
+
+    // Create 1000 files across multiple directories
+    for i in 0..1000 {
+        let dir = format!("dir_{:02}", i / 100);
+        let file = format!("{}/file_{:04}.rs", dir, i);
+        repo.add_file(
+            &file,
+            &format!("//! File {} documentation\nfn file_{}() {{}}", i, i),
+        );
+    }
+
+    let start = Instant::now();
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    let elapsed = start.elapsed();
+
+    assert!(success, "fruit should succeed with 1000 files");
+    assert!(
+        stdout.contains("1000 files"),
+        "should process all files: {}",
+        stdout
+    );
+
+    // Performance threshold: should complete in under 10 seconds
+    // This is a generous threshold to avoid flaky tests
+    assert!(
+        elapsed.as_secs() < 10,
+        "processing 1000 files took too long: {:?}",
+        elapsed
+    );
+}
