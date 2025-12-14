@@ -1,10 +1,47 @@
 //! CLI entry point for fruit
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use fruit::{print_json, GitFilter, OutputConfig, TreeFormatter, TreeWalker, WalkerConfig};
+
+/// Color output mode
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum ColorMode {
+    /// Auto-detect based on terminal and environment
+    #[default]
+    Auto,
+    /// Always use colors
+    Always,
+    /// Never use colors
+    Never,
+}
+
+/// Determine whether to use color output based on mode and environment.
+fn should_use_color(mode: ColorMode) -> bool {
+    match mode {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => {
+            // Respect NO_COLOR environment variable (https://no-color.org/)
+            if std::env::var_os("NO_COLOR").is_some() {
+                return false;
+            }
+            // Respect FORCE_COLOR environment variable
+            if std::env::var_os("FORCE_COLOR").is_some() {
+                return true;
+            }
+            // Respect TERM=dumb
+            if std::env::var("TERM").map(|t| t == "dumb").unwrap_or(false) {
+                return false;
+            }
+            // Check if stdout is a TTY
+            std::io::stdout().is_terminal()
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "fruit")]
@@ -35,9 +72,9 @@ struct Args {
     #[arg(short = 'I', long = "ignore")]
     ignore: Vec<String>,
 
-    /// Disable colorized output
-    #[arg(long = "no-color")]
-    no_color: bool,
+    /// Control color output: auto, always, never
+    #[arg(long = "color", value_name = "WHEN", default_value = "auto")]
+    color: ColorMode,
 
     /// Disable comment extraction
     #[arg(long = "no-comments")]
@@ -94,7 +131,7 @@ fn main() {
         print_json(&tree)
     } else {
         let output_config = OutputConfig {
-            use_color: !args.no_color,
+            use_color: should_use_color(args.color),
             show_full_comment: args.full_comment,
             wrap_width: if args.wrap == 0 { None } else { Some(args.wrap) },
         };
