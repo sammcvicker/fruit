@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Comprehensive edge case and error handling test suite (#14)
+  - Symlink handling tests (to file, to directory, to parent, broken, self-referential)
+  - Permission error handling tests (unreadable directories and files)
+  - Special filename tests (spaces, unicode, special characters)
+  - Comment extraction edge cases (empty files, binary files, unknown extensions)
+  - Output edge cases (deep nesting, many files, wrap width edge cases)
+
 - Initial tree command with git-aware filtering (respects .gitignore)
 - Automatic comment extraction for source files:
   - Rust (`//!`, `///`, `/*! */`)
