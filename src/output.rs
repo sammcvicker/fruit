@@ -3,7 +3,7 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use crate::tree::TreeNode;
+use crate::tree::{StreamingOutput, TreeNode};
 
 /// Print tree node as pretty-printed JSON to stdout.
 pub fn print_json(node: &TreeNode) -> io::Result<()> {
@@ -290,6 +290,130 @@ impl TreeFormatter {
 
 fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
+}
+
+/// Streaming output formatter - outputs directly to stdout without buffering.
+/// Implements the StreamingOutput trait for use with StreamingWalker.
+pub struct StreamingFormatter {
+    config: OutputConfig,
+    stdout: StandardStream,
+}
+
+impl StreamingFormatter {
+    pub fn new(config: OutputConfig) -> Self {
+        let choice = if config.use_color {
+            ColorChoice::Auto
+        } else {
+            ColorChoice::Never
+        };
+        Self {
+            config,
+            stdout: StandardStream::stdout(choice),
+        }
+    }
+}
+
+impl StreamingOutput for StreamingFormatter {
+    fn output_node(
+        &mut self,
+        name: &str,
+        comment: Option<&str>,
+        is_dir: bool,
+        is_last: bool,
+        prefix: &str,
+        is_root: bool,
+    ) -> io::Result<()> {
+        let connector = if is_last { "└── " } else { "├── " };
+
+        if is_dir {
+            if is_root {
+                self.stdout
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Blue)).set_bold(true))?;
+                writeln!(self.stdout, "{}", name)?;
+                self.stdout.reset()?;
+            } else {
+                write!(self.stdout, "{}{}", prefix, connector)?;
+                self.stdout
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Blue)).set_bold(true))?;
+                writeln!(self.stdout, "{}", name)?;
+                self.stdout.reset()?;
+            }
+        } else {
+            // File
+            write!(self.stdout, "{}{}", prefix, connector)?;
+            self.stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+            write!(self.stdout, "{}", name)?;
+            self.stdout.reset()?;
+
+            if let Some(c) = comment {
+                self.stdout
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                if self.config.show_full_comment {
+                    // Calculate padding for continuation lines
+                    let continuation_prefix = if is_last {
+                        format!("{}    ", prefix)
+                    } else {
+                        format!("{}│   ", prefix)
+                    };
+                    let padding_len = name.len() + 4; // "  # " align with text start
+                    let padding = " ".repeat(padding_len);
+
+                    // Calculate available width for text wrapping
+                    let prefix_width = continuation_prefix.chars().count() + padding_len;
+                    let wrap_width = self
+                        .config
+                        .wrap_width
+                        .map(|w| w.saturating_sub(prefix_width))
+                        .filter(|&w| w > 10);
+
+                    let comment = c.trim();
+                    let has_multiple_lines = comment.contains('\n');
+
+                    let mut first_line_done = false;
+                    for line in comment.lines() {
+                        let wrapped = if let Some(width) = wrap_width {
+                            wrap_text(line, width)
+                        } else {
+                            vec![line.to_string()]
+                        };
+
+                        for (i, wrapped_line) in wrapped.iter().enumerate() {
+                            if !first_line_done && i == 0 {
+                                writeln!(self.stdout, "  # {}", wrapped_line)?;
+                                first_line_done = true;
+                            } else {
+                                self.stdout.reset()?;
+                                write!(self.stdout, "{}", continuation_prefix)?;
+                                self.stdout.set_color(
+                                    ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true),
+                                )?;
+                                writeln!(self.stdout, "{}{}", padding, wrapped_line)?;
+                            }
+                        }
+                    }
+
+                    // Add blank line after multiline comments for readability
+                    if has_multiple_lines {
+                        self.stdout.reset()?;
+                        writeln!(self.stdout, "{}", continuation_prefix)?;
+                    }
+                } else {
+                    writeln!(self.stdout, "  # {}", first_line(c))?;
+                }
+                self.stdout.reset()?;
+            } else {
+                writeln!(self.stdout)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, dir_count: usize, file_count: usize) -> io::Result<()> {
+        writeln!(self.stdout)?;
+        writeln!(self.stdout, "{} directories, {} files", dir_count, file_count)?;
+        Ok(())
+    }
 }
 
 /// Wrap text to fit within max_width, preferring word boundaries.

@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::{Parser, ValueEnum};
-use fruit::{print_json, GitFilter, OutputConfig, TreeFormatter, TreeWalker, WalkerConfig};
+use fruit::{
+    print_json, GitFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker,
+    WalkerConfig,
+};
 
 /// Color output mode
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -97,19 +100,8 @@ fn main() {
         max_depth: args.level,
         dirs_only: args.dirs_only,
         extract_comments: !args.no_comments,
-        ignore_patterns: args.ignore,
+        ignore_patterns: args.ignore.clone(),
     };
-
-    let mut walker = TreeWalker::new(walker_config);
-
-    // Set up git filter unless --all is specified
-    if !args.all {
-        if let Some(filter) = GitFilter::new(&args.path) {
-            walker = walker.with_git_filter(filter);
-        } else {
-            eprintln!("fruit: warning: not a git repository, showing all files");
-        }
-    }
 
     let root = if args.path.is_absolute() {
         args.path.clone()
@@ -119,24 +111,62 @@ fn main() {
             .join(&args.path)
     };
 
-    let tree = match walker.walk(&root) {
-        Some(t) => t,
-        None => {
-            eprintln!("fruit: cannot access '{}': No such file or directory", args.path.display());
-            process::exit(1);
-        }
-    };
-
+    // JSON output requires full tree in memory (for serialization)
+    // Console output uses streaming to reduce memory usage
     let result = if args.json {
+        let mut walker = TreeWalker::new(walker_config);
+
+        // Set up git filter unless --all is specified
+        if !args.all {
+            if let Some(filter) = GitFilter::new(&args.path) {
+                walker = walker.with_git_filter(filter);
+            } else {
+                eprintln!("fruit: warning: not a git repository, showing all files");
+            }
+        }
+
+        let tree = match walker.walk(&root) {
+            Some(t) => t,
+            None => {
+                eprintln!(
+                    "fruit: cannot access '{}': No such file or directory",
+                    args.path.display()
+                );
+                process::exit(1);
+            }
+        };
         print_json(&tree)
     } else {
+        // Use streaming walker for console output - much lower memory usage
+        let mut walker = StreamingWalker::new(walker_config);
+
+        // Set up git filter unless --all is specified
+        if !args.all {
+            if let Some(filter) = GitFilter::new(&args.path) {
+                walker = walker.with_git_filter(filter);
+            } else {
+                eprintln!("fruit: warning: not a git repository, showing all files");
+            }
+        }
+
         let output_config = OutputConfig {
             use_color: should_use_color(args.color),
             show_full_comment: args.full_comment,
             wrap_width: if args.wrap == 0 { None } else { Some(args.wrap) },
         };
-        let formatter = TreeFormatter::new(output_config);
-        formatter.print(&tree)
+        let mut formatter = StreamingFormatter::new(output_config);
+
+        match walker.walk_streaming(&root, &mut formatter) {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) => {
+                eprintln!(
+                    "fruit: cannot access '{}': No such file or directory",
+                    args.path.display()
+                );
+                process::exit(1);
+            }
+            Err(e) => Err(e),
+        }
     };
 
     if let Err(e) = result {

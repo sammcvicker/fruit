@@ -8,6 +8,8 @@ use serde::Serialize;
 use crate::comments::extract_first_comment;
 use crate::git::GitFilter;
 
+/// TreeNode for JSON output - still builds full tree in memory.
+/// For large repos, use StreamingWalker instead for console output.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TreeNode {
@@ -198,6 +200,225 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     Pattern::new(pattern)
         .map(|p| p.matches(name))
         .unwrap_or(false)
+}
+
+/// Streaming tree walker that outputs directly without building tree in memory.
+/// Uses O(depth) memory instead of O(files) for the tree structure.
+pub struct StreamingWalker {
+    config: WalkerConfig,
+    git_filter: Option<GitFilter>,
+}
+
+/// Callback for streaming output - receives name, comment, is_dir, is_last, prefix
+pub trait StreamingOutput {
+    fn output_node(
+        &mut self,
+        name: &str,
+        comment: Option<&str>,
+        is_dir: bool,
+        is_last: bool,
+        prefix: &str,
+        is_root: bool,
+    ) -> std::io::Result<()>;
+
+    fn finish(&mut self, dir_count: usize, file_count: usize) -> std::io::Result<()>;
+}
+
+impl StreamingWalker {
+    pub fn new(config: WalkerConfig) -> Self {
+        Self {
+            config,
+            git_filter: None,
+        }
+    }
+
+    pub fn with_git_filter(mut self, filter: GitFilter) -> Self {
+        self.git_filter = Some(filter);
+        self
+    }
+
+    /// Walk and stream output - returns (dir_count, file_count)
+    pub fn walk_streaming<O: StreamingOutput>(
+        &self,
+        root: &Path,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
+        match self.walk_dir_streaming(root, 0, "", true, output) {
+            Ok(Some((d, f))) => {
+                output.finish(d, f)?;
+                Ok(Some((d, f)))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn walk_dir_streaming<O: StreamingOutput>(
+        &self,
+        path: &Path,
+        depth: usize,
+        prefix: &str,
+        is_root: bool,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
+        // Skip symlinks to prevent infinite loops and directory traversal issues
+        if path.is_symlink() {
+            return Ok(None);
+        }
+
+        let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
+
+        // Files are handled by their parent directory iteration
+        if path.is_file() || !path.is_dir() {
+            return Ok(None);
+        }
+
+        // Collect and sort entries
+        let entries = match std::fs::read_dir(path) {
+            Ok(e) => e,
+            Err(_) => return Ok(None),
+        };
+
+        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+        // Filter entries first to know which ones will be included
+        let filtered_entries: Vec<_> = entries
+            .into_iter()
+            .filter(|entry| {
+                let entry_path = entry.path();
+                !self.should_ignore(&entry_path)
+            })
+            .collect();
+
+        // Get the directory name for output
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+
+        // If at max depth, output directory but don't descend
+        if at_max_depth && !is_root {
+            return Ok(Some((0, 0)));
+        }
+
+        // Output this directory (root handled specially)
+        if is_root {
+            output.output_node(&name, None, true, true, prefix, true)?;
+        }
+
+        let mut dir_count = 0usize;
+        let mut file_count = 0usize;
+
+        // We need to peek ahead to know which entries will actually produce output
+        // to determine is_last correctly
+        let mut valid_entries: Vec<(std::fs::DirEntry, bool, Option<String>)> = Vec::new();
+
+        for entry in filtered_entries {
+            let entry_path = entry.path();
+
+            if entry_path.is_file() {
+                if self.config.dirs_only {
+                    continue;
+                }
+                if !self.should_include(&entry_path) {
+                    continue;
+                }
+                let comment = if self.config.extract_comments {
+                    extract_first_comment(&entry_path)
+                } else {
+                    None
+                };
+                valid_entries.push((entry, false, comment));
+            } else if entry_path.is_dir() && !entry_path.is_symlink() {
+                // Check if this directory has any content (or if we're in dirs_only mode)
+                if self.config.dirs_only || self.has_tracked_files(&entry_path) {
+                    valid_entries.push((entry, true, None));
+                }
+            }
+        }
+
+        let total = valid_entries.len();
+
+        for (i, (entry, is_dir, comment)) in valid_entries.into_iter().enumerate() {
+            let entry_path = entry.path();
+            let entry_name = entry.file_name().to_string_lossy().to_string();
+            let is_last = i == total - 1;
+
+            // Calculate the prefix for this entry's children
+            // (based on whether this entry is last among its siblings)
+            let new_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            if is_dir {
+                output.output_node(&entry_name, None, true, is_last, prefix, false)?;
+                dir_count += 1;
+
+                // Recurse
+                if let Ok(Some((d, f))) =
+                    self.walk_dir_streaming(&entry_path, depth + 1, &new_prefix, false, output)
+                {
+                    dir_count += d;
+                    file_count += f;
+                }
+            } else {
+                output.output_node(
+                    &entry_name,
+                    comment.as_deref(),
+                    false,
+                    is_last,
+                    prefix,
+                    false,
+                )?;
+                file_count += 1;
+            }
+        }
+
+        Ok(Some((dir_count, file_count)))
+    }
+
+    fn has_tracked_files(&self, path: &Path) -> bool {
+        if let Some(ref filter) = self.git_filter {
+            filter.is_tracked(path)
+        } else {
+            // Without git filter, assume directory has content
+            true
+        }
+    }
+
+    fn should_include(&self, path: &Path) -> bool {
+        if self.config.show_all {
+            return true;
+        }
+        if let Some(ref filter) = self.git_filter {
+            return filter.is_tracked(path);
+        }
+        true
+    }
+
+    fn should_ignore(&self, path: &Path) -> bool {
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // Always ignore .git directory
+        if name == ".git" {
+            return true;
+        }
+
+        // Check custom ignore patterns
+        for pattern in &self.config.ignore_patterns {
+            if name == *pattern || glob_match(pattern, &name) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[cfg(test)]
