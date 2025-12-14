@@ -41,7 +41,22 @@ Use a descriptive branch name like `issue-15-fix-edition-2024` or `issue-1-file-
 - Add tests if appropriate
 - Run `cargo build` and `cargo test` to verify
 
-### 4. Complete the Work
+### 4. Update the Changelog
+
+Before committing, update `CHANGELOG.md` if the change is user-facing:
+- **Added**: New features or capabilities
+- **Changed**: Changes to existing functionality
+- **Fixed**: Bug fixes
+- **Performance**: Speed or memory improvements (include metrics if available)
+- **Deprecated**: Features that will be removed
+- **Removed**: Features that were removed
+
+Skip changelog updates for:
+- Internal refactoring with no user-visible changes
+- Documentation-only changes
+- Test-only changes
+
+### 5. Complete the Work
 
 **If work is COMPLETE:**
 ```bash
@@ -61,7 +76,7 @@ gh issue comment <number> --body "Progress update: <what was done, what remains,
 ```
 Do NOT merge incomplete work. Leave the branch for future continuation.
 
-### 5. Report Back
+### 6. Report Back
 
 Summarize what was done:
 - Which issue was worked on
