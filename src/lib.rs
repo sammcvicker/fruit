@@ -6,6 +6,6 @@ pub mod output;
 pub mod tree;
 
 pub use comments::extract_first_comment;
-pub use git::GitFilter;
+pub use git::{GitFilter, GitignoreFilter};
 pub use output::{OutputConfig, StreamingFormatter, TreeFormatter, print_json};
-pub use tree::{StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};
+pub use tree::{FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};

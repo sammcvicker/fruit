@@ -6,7 +6,7 @@ use std::process;
 
 use clap::{Parser, ValueEnum};
 use fruit::{
-    GitFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
+    GitignoreFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
     print_json,
 };
 
@@ -55,7 +55,7 @@ struct Args {
     #[arg(default_value = ".")]
     path: PathBuf,
 
-    /// Show all files (ignore git filtering)
+    /// Show all files (ignore .gitignore filtering)
     #[arg(short, long)]
     all: bool,
 
@@ -116,10 +116,10 @@ fn main() {
     let result = if args.json {
         let mut walker = TreeWalker::new(walker_config);
 
-        // Set up git filter unless --all is specified
+        // Set up gitignore filter unless --all is specified
         if !args.all {
-            if let Some(filter) = GitFilter::new(&args.path) {
-                walker = walker.with_git_filter(filter);
+            if let Some(filter) = GitignoreFilter::new(&args.path) {
+                walker = walker.with_gitignore_filter(filter);
             } else {
                 eprintln!("fruit: warning: not a git repository, showing all files");
             }
@@ -140,10 +140,10 @@ fn main() {
         // Use streaming walker for console output - much lower memory usage
         let mut walker = StreamingWalker::new(walker_config);
 
-        // Set up git filter unless --all is specified
+        // Set up gitignore filter unless --all is specified
         if !args.all {
-            if let Some(filter) = GitFilter::new(&args.path) {
-                walker = walker.with_git_filter(filter);
+            if let Some(filter) = GitignoreFilter::new(&args.path) {
+                walker = walker.with_gitignore_filter(filter);
             } else {
                 eprintln!("fruit: warning: not a git repository, showing all files");
             }

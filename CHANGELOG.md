@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - Unreleased
 
+### Changed
+
+- Switch to `.gitignore` pattern-based filtering by default (#16)
+  - Now respects `.gitignore` patterns directly instead of git tracking status
+  - Nested `.gitignore` files are properly handled
+  - Global gitignore (`~/.config/git/ignore`) is respected
+  - Negation patterns (`!important.log`) work correctly
+  - Untracked files are now shown (unless ignored by `.gitignore`)
+  - Uses the `ignore` crate (from ripgrep) for battle-tested performance
+
 ### Added
 
 - Criterion benchmarks for performance testing (#13)

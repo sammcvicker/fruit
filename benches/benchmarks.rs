@@ -1,7 +1,7 @@
 //! Performance benchmarks for fruit
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use fruit::{GitFilter, extract_first_comment};
+use fruit::{GitFilter, GitignoreFilter, extract_first_comment};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -165,6 +165,30 @@ fn bench_git_filter_init(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_gitignore_filter_init(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gitignore_filter_init");
+
+    // Small repo (10 files)
+    let small_repo = create_test_repo_with_files(10);
+    group.bench_function("small_repo_10_files", |b| {
+        b.iter(|| GitignoreFilter::new(black_box(small_repo.path())))
+    });
+
+    // Medium repo (100 files)
+    let medium_repo = create_test_repo_with_files(100);
+    group.bench_function("medium_repo_100_files", |b| {
+        b.iter(|| GitignoreFilter::new(black_box(medium_repo.path())))
+    });
+
+    // Larger repo (500 files)
+    let large_repo = create_test_repo_with_files(500);
+    group.bench_function("large_repo_500_files", |b| {
+        b.iter(|| GitignoreFilter::new(black_box(large_repo.path())))
+    });
+
+    group.finish();
+}
+
 fn bench_git_is_tracked(c: &mut Criterion) {
     let dir = create_test_repo_with_files(100);
     let filter = GitFilter::new(dir.path()).unwrap();
@@ -189,10 +213,36 @@ fn bench_git_is_tracked(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_gitignore_is_included(c: &mut Criterion) {
+    let dir = create_test_repo_with_files(100);
+    let filter = GitignoreFilter::new(dir.path()).unwrap();
+
+    let included_file = dir.path().join("file_50.rs");
+    let excluded_file = dir.path().join("nonexistent.rs");
+
+    let mut group = c.benchmark_group("gitignore_is_included");
+
+    group.bench_function("included_file", |b| {
+        b.iter(|| filter.is_included(black_box(&included_file)))
+    });
+
+    group.bench_function("excluded_file", |b| {
+        b.iter(|| filter.is_included(black_box(&excluded_file)))
+    });
+
+    group.bench_function("directory", |b| {
+        b.iter(|| filter.is_included(black_box(dir.path())))
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_comment_extraction,
     bench_git_filter_init,
+    bench_gitignore_filter_init,
     bench_git_is_tracked,
+    bench_gitignore_is_included,
 );
 criterion_main!(benches);

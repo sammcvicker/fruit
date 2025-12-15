@@ -31,7 +31,27 @@ fn test_comment_extraction() {
 }
 
 #[test]
-fn test_git_filtering() {
+fn test_gitignore_filtering() {
+    let repo = TestRepo::with_git();
+    repo.add_file("main.rs", "fn main() {}");
+    repo.add_untracked("debug.log", "log content");
+    // Add a .gitignore that ignores *.log files
+    repo.add_file(".gitignore", "*.log\n");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success);
+    assert!(stdout.contains("main.rs"), "should show .rs file");
+    assert!(
+        !stdout.contains("debug.log"),
+        "should not show .log file (ignored by .gitignore): {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_untracked_files_shown() {
+    // With gitignore-based filtering, untracked files ARE shown (unlike old behavior)
+    // unless they match a .gitignore pattern
     let repo = TestRepo::with_git();
     repo.add_file("tracked.rs", "fn tracked() {}");
     repo.add_untracked("untracked.rs", "fn untracked() {}");
@@ -40,24 +60,26 @@ fn test_git_filtering() {
     assert!(success);
     assert!(stdout.contains("tracked.rs"), "should show tracked file");
     assert!(
-        !stdout.contains("untracked.rs"),
-        "should not show untracked file: {}",
+        stdout.contains("untracked.rs"),
+        "should show untracked file (gitignore-based filtering): {}",
         stdout
     );
 }
 
 #[test]
 fn test_show_all_flag() {
+    // -a should show files that would normally be hidden by .gitignore
     let repo = TestRepo::with_git();
-    repo.add_file("tracked.rs", "fn tracked() {}");
-    repo.add_untracked("untracked.rs", "fn untracked() {}");
+    repo.add_file("main.rs", "fn main() {}");
+    repo.add_file(".gitignore", "*.log\n");
+    repo.add_untracked("debug.log", "log content");
 
     let (stdout, _stderr, success) = run_fruit(repo.path(), &["-a"]);
     assert!(success);
-    assert!(stdout.contains("tracked.rs"), "should show tracked file");
+    assert!(stdout.contains("main.rs"), "should show main.rs");
     assert!(
-        stdout.contains("untracked.rs"),
-        "should show untracked file with -a: {}",
+        stdout.contains("debug.log"),
+        "should show ignored file with -a: {}",
         stdout
     );
 }

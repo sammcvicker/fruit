@@ -6,7 +6,25 @@ use glob::Pattern;
 use serde::Serialize;
 
 use crate::comments::extract_first_comment;
-use crate::git::GitFilter;
+use crate::git::{GitFilter, GitignoreFilter};
+
+/// File filter that can use either gitignore patterns or git tracking status.
+pub enum FileFilter {
+    /// Filter based on .gitignore patterns (default)
+    Gitignore(GitignoreFilter),
+    /// Filter based on git tracking status (--tracked mode)
+    GitTracked(GitFilter),
+}
+
+impl FileFilter {
+    /// Check if a path should be included.
+    pub fn is_included(&self, path: &Path) -> bool {
+        match self {
+            FileFilter::Gitignore(f) => f.is_included(path),
+            FileFilter::GitTracked(f) => f.is_tracked(path),
+        }
+    }
+}
 
 /// TreeNode for JSON output - still builds full tree in memory.
 /// For large repos, use StreamingWalker instead for console output.
@@ -50,20 +68,30 @@ pub struct WalkerConfig {
 
 pub struct TreeWalker {
     config: WalkerConfig,
-    git_filter: Option<GitFilter>,
+    filter: Option<FileFilter>,
 }
 
 impl TreeWalker {
     pub fn new(config: WalkerConfig) -> Self {
         Self {
             config,
-            git_filter: None,
+            filter: None,
         }
     }
 
-    pub fn with_git_filter(mut self, filter: GitFilter) -> Self {
-        self.git_filter = Some(filter);
+    pub fn with_filter(mut self, filter: FileFilter) -> Self {
+        self.filter = Some(filter);
         self
+    }
+
+    /// Legacy method for backwards compatibility - use with_filter instead.
+    pub fn with_git_filter(self, filter: GitFilter) -> Self {
+        self.with_filter(FileFilter::GitTracked(filter))
+    }
+
+    /// Set gitignore-based filtering (default behavior).
+    pub fn with_gitignore_filter(self, filter: GitignoreFilter) -> Self {
+        self.with_filter(FileFilter::Gitignore(filter))
     }
 
     pub fn walk(&self, root: &Path) -> Option<TreeNode> {
@@ -142,7 +170,7 @@ impl TreeWalker {
                     // Otherwise, skip truly empty directories (those with no tracked files)
                     if c.is_empty()
                         && !self.config.dirs_only
-                        && !self.has_tracked_files(&entry_path)
+                        && !self.has_included_files(&entry_path)
                     {
                         continue;
                     }
@@ -158,11 +186,11 @@ impl TreeWalker {
         })
     }
 
-    fn has_tracked_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.git_filter {
-            filter.is_tracked(path)
+    fn has_included_files(&self, path: &Path) -> bool {
+        if let Some(ref filter) = self.filter {
+            filter.is_included(path)
         } else {
-            // Without git filter, assume directory has content
+            // Without filter, assume directory has content
             true
         }
     }
@@ -171,8 +199,8 @@ impl TreeWalker {
         if self.config.show_all {
             return true;
         }
-        if let Some(ref filter) = self.git_filter {
-            return filter.is_tracked(path);
+        if let Some(ref filter) = self.filter {
+            return filter.is_included(path);
         }
         true
     }
@@ -209,7 +237,7 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 /// Uses O(depth) memory instead of O(files) for the tree structure.
 pub struct StreamingWalker {
     config: WalkerConfig,
-    git_filter: Option<GitFilter>,
+    filter: Option<FileFilter>,
 }
 
 /// Callback for streaming output - receives name, comment, is_dir, is_last, prefix
@@ -231,13 +259,23 @@ impl StreamingWalker {
     pub fn new(config: WalkerConfig) -> Self {
         Self {
             config,
-            git_filter: None,
+            filter: None,
         }
     }
 
-    pub fn with_git_filter(mut self, filter: GitFilter) -> Self {
-        self.git_filter = Some(filter);
+    pub fn with_filter(mut self, filter: FileFilter) -> Self {
+        self.filter = Some(filter);
         self
+    }
+
+    /// Legacy method for backwards compatibility - use with_filter instead.
+    pub fn with_git_filter(self, filter: GitFilter) -> Self {
+        self.with_filter(FileFilter::GitTracked(filter))
+    }
+
+    /// Set gitignore-based filtering (default behavior).
+    pub fn with_gitignore_filter(self, filter: GitignoreFilter) -> Self {
+        self.with_filter(FileFilter::Gitignore(filter))
     }
 
     /// Walk and stream output - returns (dir_count, file_count)
@@ -335,7 +373,7 @@ impl StreamingWalker {
                 valid_entries.push((entry, false, comment));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
-                if self.config.dirs_only || self.has_tracked_files(&entry_path) {
+                if self.config.dirs_only || self.has_included_files(&entry_path) {
                     valid_entries.push((entry, true, None));
                 }
             }
@@ -383,11 +421,11 @@ impl StreamingWalker {
         Ok(Some((dir_count, file_count)))
     }
 
-    fn has_tracked_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.git_filter {
-            filter.is_tracked(path)
+    fn has_included_files(&self, path: &Path) -> bool {
+        if let Some(ref filter) = self.filter {
+            filter.is_included(path)
         } else {
-            // Without git filter, assume directory has content
+            // Without filter, assume directory has content
             true
         }
     }
@@ -396,8 +434,8 @@ impl StreamingWalker {
         if self.config.show_all {
             return true;
         }
-        if let Some(ref filter) = self.git_filter {
-            return filter.is_tracked(path);
+        if let Some(ref filter) = self.filter {
+            return filter.is_included(path);
         }
         true
     }
