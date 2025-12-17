@@ -139,13 +139,13 @@ impl TreeFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     stdout.reset()?;
-                    write!(stdout, "{}{}", continuation_prefix, meta_prefix)?;
+                    write!(stdout, "{}", continuation_prefix)?;
                     stdout.set_color(
                         ColorSpec::new()
                             .set_fg(Some(meta_line.style.color()))
                             .set_intense(meta_line.style.is_intense()),
                     )?;
-                    writeln!(stdout, "{}", wrapped_line)?;
+                    writeln!(stdout, "{}{}", meta_prefix, wrapped_line)?;
                 }
             }
 
@@ -473,13 +473,13 @@ impl StreamingFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     self.stdout.reset()?;
-                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
+                    write!(self.stdout, "{}", continuation_prefix)?;
                     self.stdout.set_color(
                         ColorSpec::new()
                             .set_fg(Some(meta_line.style.color()))
                             .set_intense(meta_line.style.is_intense()),
                     )?;
-                    writeln!(self.stdout, "{}", wrapped_line)?;
+                    writeln!(self.stdout, "{}{}", meta_prefix, wrapped_line)?;
                 }
             }
 
