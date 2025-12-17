@@ -24,7 +24,7 @@ fn test_comment_extraction() {
     let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
     assert!(success);
     assert!(
-        stdout.contains("# CLI entry point"),
+        stdout.contains("CLI entry point"),
         "should extract comment: {}",
         stdout
     );
@@ -181,7 +181,7 @@ def main():
     let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
     assert!(success);
     assert!(
-        stdout.contains("# Module docstring"),
+        stdout.contains("Module docstring"),
         "should extract Python docstring: {}",
         stdout
     );
@@ -202,7 +202,7 @@ export function main() {}
     let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
     assert!(success);
     assert!(
-        stdout.contains("# Main application module"),
+        stdout.contains("Main application module"),
         "should extract JSDoc comment: {}",
         stdout
     );

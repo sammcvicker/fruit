@@ -86,6 +86,25 @@ impl TreeFormatter {
             return Ok(());
         }
 
+        let meta_prefix = self.config.metadata.prefix_str();
+        let is_single_line = block.lines.len() == 1;
+
+        // Single-line metadata always displays inline, regardless of full mode
+        if is_single_line {
+            if let Some(first) = block.lines.first() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                write!(stdout, "  {}{}", meta_prefix, first_line(&first.content))?;
+            }
+            writeln!(stdout)?;
+            stdout.reset()?;
+            return Ok(());
+        }
+
+        // Multi-line metadata
         if self.config.show_full() {
             // Full metadata mode: display in a block beneath filename
             writeln!(stdout)?; // End the filename line
@@ -98,7 +117,7 @@ impl TreeFormatter {
             };
 
             // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count();
+            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
             let wrap_width = self
                 .config
                 .wrap_width
@@ -120,7 +139,7 @@ impl TreeFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     stdout.reset()?;
-                    write!(stdout, "{}", continuation_prefix)?;
+                    write!(stdout, "{}{}", continuation_prefix, meta_prefix)?;
                     stdout.set_color(
                         ColorSpec::new()
                             .set_fg(Some(meta_line.style.color()))
@@ -134,17 +153,16 @@ impl TreeFormatter {
             stdout.reset()?;
             writeln!(stdout, "{}", continuation_prefix)?;
         } else {
-            // Single-line mode: show first line with prefix
+            // Not in full mode: show first line inline
             if let Some(first) = block.lines.first() {
                 stdout.set_color(
                     ColorSpec::new()
                         .set_fg(Some(first.style.color()))
                         .set_intense(first.style.is_intense()),
                 )?;
-                writeln!(stdout, "  # {}", first_line(&first.content))?;
-            } else {
-                writeln!(stdout)?;
+                write!(stdout, "  {}{}", meta_prefix, first_line(&first.content))?;
             }
+            writeln!(stdout)?;
         }
         stdout.reset()?;
         Ok(())
@@ -163,6 +181,21 @@ impl TreeFormatter {
             return;
         }
 
+        let meta_prefix = self.config.metadata.prefix_str();
+        let is_single_line = block.lines.len() == 1;
+
+        // Single-line metadata always displays inline, regardless of full mode
+        if is_single_line {
+            if let Some(first) = block.lines.first() {
+                output.push_str("  ");
+                output.push_str(meta_prefix);
+                output.push_str(first_line(&first.content));
+            }
+            output.push('\n');
+            return;
+        }
+
+        // Multi-line metadata
         if self.config.show_full() {
             // Full metadata mode: display in a block beneath filename
             output.push('\n'); // End the filename line
@@ -175,7 +208,7 @@ impl TreeFormatter {
             };
 
             // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count();
+            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
             let wrap_width = self
                 .config
                 .wrap_width
@@ -197,6 +230,7 @@ impl TreeFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     output.push_str(&continuation_prefix);
+                    output.push_str(meta_prefix);
                     output.push_str(wrapped_line);
                     output.push('\n');
                 }
@@ -206,9 +240,10 @@ impl TreeFormatter {
             output.push_str(&continuation_prefix);
             output.push('\n');
         } else {
-            // Single-line mode: show first line with prefix
+            // Not in full mode: show first line inline
             if let Some(first) = block.lines.first() {
-                output.push_str("  # ");
+                output.push_str("  ");
+                output.push_str(meta_prefix);
                 output.push_str(first_line(&first.content));
             }
             output.push('\n');
@@ -380,6 +415,30 @@ impl StreamingFormatter {
             return Ok(());
         }
 
+        let meta_prefix = self.config.metadata.prefix_str();
+        let is_single_line = block.lines.len() == 1;
+
+        // Single-line metadata always displays inline, regardless of full mode
+        if is_single_line {
+            if let Some(first) = block.lines.first() {
+                self.stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                write!(
+                    self.stdout,
+                    "  {}{}",
+                    meta_prefix,
+                    first_line(&first.content)
+                )?;
+            }
+            writeln!(self.stdout)?;
+            self.stdout.reset()?;
+            return Ok(());
+        }
+
+        // Multi-line metadata
         if self.config.show_full() {
             // Full metadata mode: display in a block beneath filename
             writeln!(self.stdout)?; // End the filename line
@@ -392,7 +451,7 @@ impl StreamingFormatter {
             };
 
             // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count();
+            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
             let wrap_width = self
                 .config
                 .wrap_width
@@ -414,7 +473,7 @@ impl StreamingFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     self.stdout.reset()?;
-                    write!(self.stdout, "{}", continuation_prefix)?;
+                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
                     self.stdout.set_color(
                         ColorSpec::new()
                             .set_fg(Some(meta_line.style.color()))
@@ -428,17 +487,21 @@ impl StreamingFormatter {
             self.stdout.reset()?;
             writeln!(self.stdout, "{}", continuation_prefix)?;
         } else {
-            // Single-line mode: show first line with prefix
+            // Not in full mode: show first line inline
             if let Some(first) = block.lines.first() {
                 self.stdout.set_color(
                     ColorSpec::new()
                         .set_fg(Some(first.style.color()))
                         .set_intense(first.style.is_intense()),
                 )?;
-                writeln!(self.stdout, "  # {}", first_line(&first.content))?;
-            } else {
-                writeln!(self.stdout)?;
+                write!(
+                    self.stdout,
+                    "  {}{}",
+                    meta_prefix,
+                    first_line(&first.content)
+                )?;
             }
+            writeln!(self.stdout)?;
         }
         self.stdout.reset()?;
         Ok(())
@@ -619,7 +682,7 @@ mod tests {
 
         assert!(output.contains("."));
         assert!(output.contains("├── Cargo.toml"));
-        assert!(output.contains("# Package manifest"));
+        assert!(output.contains("Package manifest"));
         assert!(output.contains("└── src"));
         assert!(output.contains("├── main.rs"));
         assert!(output.contains("└── lib.rs"));

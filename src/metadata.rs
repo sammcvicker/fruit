@@ -143,6 +143,8 @@ pub struct MetadataConfig {
     pub comments: bool,
     /// Show full metadata blocks (multi-line) vs first line only
     pub full: bool,
+    /// Optional prefix to add before each metadata line (e.g., "# ")
+    pub prefix: Option<String>,
 }
 
 impl MetadataConfig {
@@ -151,6 +153,7 @@ impl MetadataConfig {
         Self {
             comments: true,
             full,
+            prefix: None,
         }
     }
 
@@ -159,7 +162,19 @@ impl MetadataConfig {
         Self {
             comments: false,
             full: false,
+            prefix: None,
         }
+    }
+
+    /// Set a prefix for metadata lines (e.g., "# " or "// ").
+    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.prefix = Some(prefix.into());
+        self
+    }
+
+    /// Get the prefix string, or empty string if none set.
+    pub fn prefix_str(&self) -> &str {
+        self.prefix.as_deref().unwrap_or("")
     }
 }
 
@@ -213,13 +228,24 @@ mod tests {
         let config = MetadataConfig::default();
         assert!(!config.comments);
         assert!(!config.full);
+        assert!(config.prefix.is_none());
 
         let comments = MetadataConfig::comments_only(true);
         assert!(comments.comments);
         assert!(comments.full);
+        assert!(comments.prefix.is_none());
 
         let none = MetadataConfig::none();
         assert!(!none.comments);
         assert!(!none.full);
+    }
+
+    #[test]
+    fn test_metadata_config_with_prefix() {
+        let config = MetadataConfig::comments_only(false).with_prefix("# ");
+        assert_eq!(config.prefix_str(), "# ");
+
+        let no_prefix = MetadataConfig::comments_only(false);
+        assert_eq!(no_prefix.prefix_str(), "");
     }
 }
