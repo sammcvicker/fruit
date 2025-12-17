@@ -93,12 +93,14 @@ impl TreeFormatter {
         // Not in full mode: show first line inline only
         if !self.config.show_full() {
             if let Some(first) = block.first_line(order) {
-                stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
+                write!(stdout, "  {}", meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    stdout,
+                    first_line(&first.content),
+                    first.symbol_name.as_deref(),
+                    first.style.color(),
+                    first.style.is_intense(),
                 )?;
-                write!(stdout, "  {}{}", meta_prefix, first_line(&first.content))?;
             }
             writeln!(stdout)?;
             stdout.reset()?;
@@ -148,13 +150,15 @@ impl TreeFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     stdout.reset()?;
-                    write!(stdout, "{}", continuation_prefix)?;
-                    stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(meta_line.style.color()))
-                            .set_intense(meta_line.style.is_intense()),
+                    write!(stdout, "{}{}", continuation_prefix, meta_prefix)?;
+                    write_metadata_line_with_symbol(
+                        stdout,
+                        wrapped_line,
+                        meta_line.symbol_name.as_deref(),
+                        meta_line.style.color(),
+                        meta_line.style.is_intense(),
                     )?;
-                    writeln!(stdout, "{}{}", meta_prefix, wrapped_line)?;
+                    writeln!(stdout)?;
                 }
             }
 
@@ -379,6 +383,63 @@ fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
 }
 
+/// Write a metadata line, highlighting the symbol name in bold red if present.
+fn write_metadata_line_with_symbol(
+    stdout: &mut StandardStream,
+    content: &str,
+    symbol_name: Option<&str>,
+    base_color: Color,
+    is_intense: bool,
+) -> io::Result<()> {
+    if let Some(sym) = symbol_name {
+        // Find the symbol in the content and highlight it
+        if let Some(pos) = content.find(sym) {
+            // Write part before symbol
+            let before = &content[..pos];
+            if !before.is_empty() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(base_color))
+                        .set_intense(is_intense),
+                )?;
+                write!(stdout, "{}", before)?;
+            }
+
+            // Write symbol in bold red
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+            write!(stdout, "{}", sym)?;
+
+            // Write part after symbol
+            let after = &content[pos + sym.len()..];
+            if !after.is_empty() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(base_color))
+                        .set_intense(is_intense),
+                )?;
+                write!(stdout, "{}", after)?;
+            }
+        } else {
+            // Symbol not found in content, just write normally
+            stdout.set_color(
+                ColorSpec::new()
+                    .set_fg(Some(base_color))
+                    .set_intense(is_intense),
+            )?;
+            write!(stdout, "{}", content)?;
+        }
+    } else {
+        // No symbol to highlight
+        stdout.set_color(
+            ColorSpec::new()
+                .set_fg(Some(base_color))
+                .set_intense(is_intense),
+        )?;
+        write!(stdout, "{}", content)?;
+    }
+    Ok(())
+}
+
 /// Streaming output formatter - outputs directly to stdout without buffering.
 /// Implements the StreamingOutput trait for use with StreamingWalker.
 pub struct StreamingFormatter {
@@ -421,16 +482,13 @@ impl StreamingFormatter {
         // Not in full mode: show first line inline only
         if !self.config.show_full() {
             if let Some(first) = block.first_line(order) {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
-                )?;
-                write!(
-                    self.stdout,
-                    "  {}{}",
-                    meta_prefix,
-                    first_line(&first.content)
+                write!(self.stdout, "  {}", meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    &mut self.stdout,
+                    first_line(&first.content),
+                    first.symbol_name.as_deref(),
+                    first.style.color(),
+                    first.style.is_intense(),
                 )?;
             }
             writeln!(self.stdout)?;
@@ -445,16 +503,13 @@ impl StreamingFormatter {
         // If total is just 1 line, show inline
         if total_lines == 1 {
             if let Some(first) = block.first_line(order) {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
-                )?;
-                write!(
-                    self.stdout,
-                    "  {}{}",
-                    meta_prefix,
-                    first_line(&first.content)
+                write!(self.stdout, "  {}", meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    &mut self.stdout,
+                    first_line(&first.content),
+                    first.symbol_name.as_deref(),
+                    first.style.color(),
+                    first.style.is_intense(),
                 )?;
             }
             writeln!(self.stdout)?;
@@ -465,16 +520,13 @@ impl StreamingFormatter {
         // If first section is single line and there's more content, show first inline then rest below
         if first_is_single {
             if let Some(first) = block.first_line(order) {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
-                )?;
-                write!(
-                    self.stdout,
-                    "  {}{}",
-                    meta_prefix,
-                    first_line(&first.content)
+                write!(self.stdout, "  {}", meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    &mut self.stdout,
+                    first_line(&first.content),
+                    first.symbol_name.as_deref(),
+                    first.style.color(),
+                    first.style.is_intense(),
                 )?;
             }
             writeln!(self.stdout)?;
@@ -520,13 +572,15 @@ impl StreamingFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     self.stdout.reset()?;
-                    write!(self.stdout, "{}", continuation_prefix)?;
-                    self.stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(meta_line.style.color()))
-                            .set_intense(meta_line.style.is_intense()),
+                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
+                    write_metadata_line_with_symbol(
+                        &mut self.stdout,
+                        wrapped_line,
+                        meta_line.symbol_name.as_deref(),
+                        meta_line.style.color(),
+                        meta_line.style.is_intense(),
                     )?;
-                    writeln!(self.stdout, "{}{}", meta_prefix, wrapped_line)?;
+                    writeln!(self.stdout)?;
                 }
             }
 
@@ -575,13 +629,15 @@ impl StreamingFormatter {
 
                 for wrapped_line in wrapped.iter() {
                     self.stdout.reset()?;
-                    write!(self.stdout, "{}", continuation_prefix)?;
-                    self.stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(meta_line.style.color()))
-                            .set_intense(meta_line.style.is_intense()),
+                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
+                    write_metadata_line_with_symbol(
+                        &mut self.stdout,
+                        wrapped_line,
+                        meta_line.symbol_name.as_deref(),
+                        meta_line.style.color(),
+                        meta_line.style.is_intense(),
                     )?;
-                    writeln!(self.stdout, "{}{}", meta_prefix, wrapped_line)?;
+                    writeln!(self.stdout)?;
                 }
             }
 

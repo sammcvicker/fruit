@@ -14,7 +14,8 @@ use crate::metadata::{MetadataBlock, MetadataExtractor};
 const MAX_FILE_SIZE: u64 = 1_000_000;
 
 /// Extract exported type signatures from a file.
-pub fn extract_type_signatures(path: &Path) -> Option<Vec<String>> {
+/// Returns a list of (signature, symbol_name) pairs.
+pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String)>> {
     // Skip files that are too large
     if let Ok(metadata) = path.metadata() {
         if metadata.len() > MAX_FILE_SIZE {
@@ -39,21 +40,21 @@ pub fn extract_type_signatures(path: &Path) -> Option<Vec<String>> {
 
 // Static regex patterns for each language
 
-// Rust patterns
+// Rust patterns - with capture groups for symbol names
 static RUST_PUB_FN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+(async\s+)?fn\s+\w+[^{;]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+(async\s+)?fn\s+(\w+)[^{;]*").unwrap());
 static RUST_PUB_STRUCT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+struct\s+\w+[^{;]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+struct\s+(\w+)[^{;]*").unwrap());
 static RUST_PUB_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+enum\s+\w+[^{;]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+enum\s+(\w+)[^{;]*").unwrap());
 static RUST_PUB_TRAIT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+trait\s+\w+[^{;]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+trait\s+(\w+)[^{;]*").unwrap());
 static RUST_PUB_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+type\s+\w+[^;]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+type\s+(\w+)[^;]+").unwrap());
 static RUST_PUB_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+const\s+\w+:\s*[^=]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").unwrap());
 
-fn extract_rust_signatures(content: &str) -> Option<Vec<String>> {
+fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -68,40 +69,52 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<String>> {
             continue;
         }
 
-        // Check each pattern
-        if let Some(m) = RUST_PUB_FN.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = RUST_PUB_STRUCT.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = RUST_PUB_ENUM.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = RUST_PUB_TRAIT.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = RUST_PUB_TYPE.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = RUST_PUB_CONST.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
+        // Check each pattern - capture group index varies for fn (has optional async)
+        if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(2).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
         }
     }
 
     Some(signatures)
 }
 
-// TypeScript patterns
+// TypeScript patterns - with capture groups for symbol names
 static TS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+\w+[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)[^{]*").unwrap());
 static TS_EXPORT_INTERFACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+interface\s+\w+[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+interface\s+(\w+)[^{]*").unwrap());
 static TS_EXPORT_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+type\s+\w+[^=]*=\s*[^;{]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+type\s+(\w+)[^=]*=\s*[^;{]+").unwrap());
 static TS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(abstract\s+)?class\s+\w+[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+(abstract\s+)?class\s+(\w+)[^{]*").unwrap());
 static TS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+\w+:\s*[^=]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+):\s*[^=]+").unwrap());
 static TS_EXPORT_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(const\s+)?enum\s+\w+[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").unwrap());
 
-fn extract_typescript_signatures(content: &str) -> Option<Vec<String>> {
+fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -112,34 +125,46 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<String>> {
             continue;
         }
 
-        // Check each pattern
-        if let Some(m) = TS_EXPORT_FUNCTION.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = TS_EXPORT_INTERFACE.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = TS_EXPORT_TYPE.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = TS_EXPORT_CLASS.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = TS_EXPORT_CONST.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = TS_EXPORT_ENUM.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
+        // Check each pattern - capture group index varies for function/class/enum (have optional modifiers)
+        if let Some(caps) = TS_EXPORT_FUNCTION.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(2).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = TS_EXPORT_INTERFACE.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = TS_EXPORT_TYPE.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = TS_EXPORT_CLASS.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(2).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = TS_EXPORT_CONST.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = TS_EXPORT_ENUM.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(2).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
         }
     }
 
     Some(signatures)
 }
 
-// JavaScript patterns (subset of TypeScript, no type annotations)
+// JavaScript patterns (subset of TypeScript, no type annotations) - with capture groups
 static JS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+\w+\s*\([^)]*\)").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)\s*\([^)]*\)").unwrap());
 static JS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+class\s+\w+[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+class\s+(\w+)[^{]*").unwrap());
 static JS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+\w+\s*=").unwrap());
+    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+)\s*=").unwrap());
 
-fn extract_javascript_signatures(content: &str) -> Option<Vec<String>> {
+fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -151,28 +176,33 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<String>> {
         }
 
         // Check each pattern
-        if let Some(m) = JS_EXPORT_FUNCTION.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = JS_EXPORT_CLASS.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = JS_EXPORT_CONST.find(trimmed) {
+        if let Some(caps) = JS_EXPORT_FUNCTION.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(2).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = JS_EXPORT_CLASS.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = JS_EXPORT_CONST.captures(trimmed) {
             // For const, just show the declaration without the value
-            let sig = m.as_str().trim_end_matches('=').trim();
-            signatures.push(sig.to_string());
+            let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig.to_string(), sym));
         }
     }
 
     Some(signatures)
 }
 
-// Python patterns
+// Python patterns - with capture groups for symbol names
 static PY_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^def\s+\w+\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
 static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^async\s+def\s+\w+\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
-static PY_CLASS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^class\s+\w+[^:]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
+static PY_CLASS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").unwrap());
 
-fn extract_python_signatures(content: &str) -> Option<Vec<String>> {
+fn extract_python_signatures(content: &str) -> Option<Vec<(String, String)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -192,31 +222,37 @@ fn extract_python_signatures(content: &str) -> Option<Vec<String>> {
         }
 
         // Check each pattern (async first to avoid partial matches)
-        if let Some(m) = PY_ASYNC_DEF_WITH_RETURN.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = PY_DEF_WITH_RETURN.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = PY_CLASS.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
+        if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = PY_CLASS.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
         }
     }
 
     Some(signatures)
 }
 
-// Go patterns - exported items start with uppercase
+// Go patterns - exported items start with uppercase - with capture groups
 static GO_EXPORTED_FUNC: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+[A-Z]\w*\s*\([^)]*\)[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^func\s+([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
 static GO_EXPORTED_METHOD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+\([^)]+\)\s*[A-Z]\w*\s*\([^)]*\)[^{]*").unwrap());
+    LazyLock::new(|| Regex::new(r"^func\s+\([^)]+\)\s*([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
 static GO_EXPORTED_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^type\s+[A-Z]\w*\s+\w+").unwrap());
+    LazyLock::new(|| Regex::new(r"^type\s+([A-Z]\w*)\s+\w+").unwrap());
 static GO_EXPORTED_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^const\s+[A-Z]\w*\s*[^=]*=").unwrap());
+    LazyLock::new(|| Regex::new(r"^const\s+([A-Z]\w*)\s*[^=]*=").unwrap());
 static GO_EXPORTED_VAR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^var\s+[A-Z]\w*\s+\w+").unwrap());
+    LazyLock::new(|| Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").unwrap());
 
-fn extract_go_signatures(content: &str) -> Option<Vec<String>> {
+fn extract_go_signatures(content: &str) -> Option<Vec<(String, String)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -228,17 +264,26 @@ fn extract_go_signatures(content: &str) -> Option<Vec<String>> {
         }
 
         // Check each pattern (method before func to get receiver)
-        if let Some(m) = GO_EXPORTED_METHOD.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = GO_EXPORTED_FUNC.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = GO_EXPORTED_TYPE.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
-        } else if let Some(m) = GO_EXPORTED_CONST.find(trimmed) {
-            let sig = m.as_str().trim_end_matches('=').trim();
-            signatures.push(sig.to_string());
-        } else if let Some(m) = GO_EXPORTED_VAR.find(trimmed) {
-            signatures.push(clean_signature(m.as_str()));
+        if let Some(caps) = GO_EXPORTED_METHOD.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = GO_EXPORTED_FUNC.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = GO_EXPORTED_TYPE.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
+        } else if let Some(caps) = GO_EXPORTED_CONST.captures(trimmed) {
+            let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig.to_string(), sym));
+        } else if let Some(caps) = GO_EXPORTED_VAR.captures(trimmed) {
+            let sig = clean_signature(caps.get(0).unwrap().as_str());
+            let sym = caps.get(1).unwrap().as_str().to_string();
+            signatures.push((sig, sym));
         }
     }
 
@@ -287,8 +332,10 @@ pub async fn async_process(data: Vec<u8>) -> io::Result<()> {
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].starts_with("pub fn process"));
-        assert!(sigs[1].starts_with("pub async fn async_process"));
+        assert!(sigs[0].0.starts_with("pub fn process"));
+        assert_eq!(sigs[0].1, "process");
+        assert!(sigs[1].0.starts_with("pub async fn async_process"));
+        assert_eq!(sigs[1].1, "async_process");
     }
 
     #[test]
@@ -307,8 +354,10 @@ pub struct Generic<T: Clone> {
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].starts_with("pub struct Config"));
-        assert!(sigs[1].starts_with("pub struct Generic"));
+        assert!(sigs[0].0.starts_with("pub struct Config"));
+        assert_eq!(sigs[0].1, "Config");
+        assert!(sigs[1].0.starts_with("pub struct Generic"));
+        assert_eq!(sigs[1].1, "Generic");
     }
 
     #[test]
@@ -322,7 +371,8 @@ trait Private {}
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].starts_with("pub trait Handler"));
+        assert!(sigs[0].0.starts_with("pub trait Handler"));
+        assert_eq!(sigs[0].1, "Handler");
     }
 
     #[test]
@@ -337,7 +387,8 @@ enum Private {}
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].starts_with("pub enum Status"));
+        assert!(sigs[0].0.starts_with("pub enum Status"));
+        assert_eq!(sigs[0].1, "Status");
     }
 
     #[test]
@@ -365,11 +416,16 @@ function privateFunc() {}
 "#;
         let sigs = extract_typescript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 5);
-        assert!(sigs[0].starts_with("export interface User"));
-        assert!(sigs[1].starts_with("export type UserId"));
-        assert!(sigs[2].starts_with("export function getUser"));
-        assert!(sigs[3].starts_with("export async function createUser"));
-        assert!(sigs[4].starts_with("export const API_URL"));
+        assert!(sigs[0].0.starts_with("export interface User"));
+        assert_eq!(sigs[0].1, "User");
+        assert!(sigs[1].0.starts_with("export type UserId"));
+        assert_eq!(sigs[1].1, "UserId");
+        assert!(sigs[2].0.starts_with("export function getUser"));
+        assert_eq!(sigs[2].1, "getUser");
+        assert!(sigs[3].0.starts_with("export async function createUser"));
+        assert_eq!(sigs[3].1, "createUser");
+        assert!(sigs[4].0.starts_with("export const API_URL"));
+        assert_eq!(sigs[4].1, "API_URL");
     }
 
     #[test]
@@ -385,8 +441,10 @@ export abstract class BaseHandler {
 "#;
         let sigs = extract_typescript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].starts_with("export class UserService"));
-        assert!(sigs[1].starts_with("export abstract class BaseHandler"));
+        assert!(sigs[0].0.starts_with("export class UserService"));
+        assert_eq!(sigs[0].1, "UserService");
+        assert!(sigs[1].0.starts_with("export abstract class BaseHandler"));
+        assert_eq!(sigs[1].1, "BaseHandler");
     }
 
     #[test]
@@ -410,10 +468,14 @@ function privateFunc() {}
 "#;
         let sigs = extract_javascript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 4);
-        assert!(sigs[0].starts_with("export function calculate"));
-        assert!(sigs[1].starts_with("export async function fetchData"));
-        assert!(sigs[2].starts_with("export class Calculator"));
-        assert!(sigs[3].starts_with("export const VERSION"));
+        assert!(sigs[0].0.starts_with("export function calculate"));
+        assert_eq!(sigs[0].1, "calculate");
+        assert!(sigs[1].0.starts_with("export async function fetchData"));
+        assert_eq!(sigs[1].1, "fetchData");
+        assert!(sigs[2].0.starts_with("export class Calculator"));
+        assert_eq!(sigs[2].1, "Calculator");
+        assert!(sigs[3].0.starts_with("export const VERSION"));
+        assert_eq!(sigs[3].1, "VERSION");
     }
 
     #[test]
@@ -441,9 +503,12 @@ class _PrivateClass:
 "#;
         let sigs = extract_python_signatures(content).unwrap();
         assert_eq!(sigs.len(), 3);
-        assert!(sigs[0].starts_with("def process"));
-        assert!(sigs[1].starts_with("async def fetch"));
-        assert!(sigs[2].starts_with("class UserService"));
+        assert!(sigs[0].0.starts_with("def process"));
+        assert_eq!(sigs[0].1, "process");
+        assert!(sigs[1].0.starts_with("async def fetch"));
+        assert_eq!(sigs[1].1, "fetch");
+        assert!(sigs[2].0.starts_with("class UserService"));
+        assert_eq!(sigs[2].1, "UserService");
     }
 
     #[test]
@@ -476,11 +541,16 @@ func privateFunc() {}
 "#;
         let sigs = extract_go_signatures(content).unwrap();
         assert_eq!(sigs.len(), 5);
-        assert!(sigs[0].starts_with("type Config struct"));
-        assert!(sigs[1].starts_with("func NewConfig()"));
-        assert!(sigs[2].starts_with("func (c *Config) Validate()"));
-        assert!(sigs[3].starts_with("const DefaultPort"));
-        assert!(sigs[4].starts_with("var GlobalConfig"));
+        assert!(sigs[0].0.starts_with("type Config struct"));
+        assert_eq!(sigs[0].1, "Config");
+        assert!(sigs[1].0.starts_with("func NewConfig()"));
+        assert_eq!(sigs[1].1, "NewConfig");
+        assert!(sigs[2].0.starts_with("func (c *Config) Validate()"));
+        assert_eq!(sigs[2].1, "Validate");
+        assert!(sigs[3].0.starts_with("const DefaultPort"));
+        assert_eq!(sigs[3].1, "DefaultPort");
+        assert!(sigs[4].0.starts_with("var GlobalConfig"));
+        assert_eq!(sigs[4].1, "GlobalConfig");
     }
 
     #[test]

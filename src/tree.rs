@@ -475,7 +475,7 @@ impl StreamingWalker {
             if let Some(signatures) = extract_type_signatures(path) {
                 block.type_lines = signatures
                     .into_iter()
-                    .map(|sig| MetadataLine::with_style(sig, LineStyle::TypeSignature))
+                    .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
                     .collect();
             }
         }

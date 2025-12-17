@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Extracts public/exported APIs using regex patterns
   - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
   - When `-t` is specified alone, shows types only in full mode (all signatures)
-  - Type signatures display in cyan for visual distinction from comments
+  - Type signatures display in cyan with **bold red symbol names** for easy scanning
 - `--comments` / `-c` flag to explicitly enable comments
   - Combine with types: `fruit -c -t` shows comments first, then types
   - Flag order determines display order: `-t -c` shows types first

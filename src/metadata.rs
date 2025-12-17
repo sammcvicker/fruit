@@ -48,6 +48,8 @@ pub struct MetadataLine {
     pub content: String,
     /// Style for coloring
     pub style: LineStyle,
+    /// Symbol name to highlight (for type signatures)
+    pub symbol_name: Option<String>,
 }
 
 impl MetadataLine {
@@ -56,6 +58,7 @@ impl MetadataLine {
         Self {
             content: content.into(),
             style: LineStyle::Comment,
+            symbol_name: None,
         }
     }
 
@@ -64,6 +67,20 @@ impl MetadataLine {
         Self {
             content: content.into(),
             style,
+            symbol_name: None,
+        }
+    }
+
+    /// Create a new metadata line with a style and highlighted symbol name.
+    pub fn with_symbol(
+        content: impl Into<String>,
+        style: LineStyle,
+        symbol_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            content: content.into(),
+            style,
+            symbol_name: Some(symbol_name.into()),
         }
     }
 }
@@ -95,11 +112,11 @@ impl MetadataBlock {
         }
     }
 
-    /// Create a metadata block with only type lines.
-    pub fn from_types(signatures: Vec<String>) -> Self {
+    /// Create a metadata block with only type lines (signature, symbol_name pairs).
+    pub fn from_types(signatures: Vec<(String, String)>) -> Self {
         let type_lines = signatures
             .into_iter()
-            .map(|sig| MetadataLine::with_style(sig, LineStyle::TypeSignature))
+            .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
             .collect();
         Self {
             comment_lines: Vec::new(),
@@ -317,13 +334,15 @@ mod tests {
     #[test]
     fn test_metadata_block_from_types() {
         let block = MetadataBlock::from_types(vec![
-            "pub fn foo()".to_string(),
-            "pub struct Bar".to_string(),
+            ("pub fn foo()".to_string(), "foo".to_string()),
+            ("pub struct Bar".to_string(), "Bar".to_string()),
         ]);
         assert!(block.comment_lines.is_empty());
         assert_eq!(block.type_lines.len(), 2);
         assert_eq!(block.type_lines[0].content, "pub fn foo()");
         assert_eq!(block.type_lines[0].style, LineStyle::TypeSignature);
+        assert_eq!(block.type_lines[0].symbol_name, Some("foo".to_string()));
+        assert_eq!(block.type_lines[1].symbol_name, Some("Bar".to_string()));
     }
 
     #[test]
@@ -334,7 +353,8 @@ mod tests {
         let with_comments = MetadataBlock::from_comments("content");
         assert!(!with_comments.is_empty());
 
-        let with_types = MetadataBlock::from_types(vec!["fn foo()".to_string()]);
+        let with_types =
+            MetadataBlock::from_types(vec![("fn foo()".to_string(), "foo".to_string())]);
         assert!(!with_types.is_empty());
     }
 
