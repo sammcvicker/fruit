@@ -141,6 +141,8 @@ impl MetadataExtractor for CommentExtractor {
 pub struct MetadataConfig {
     /// Show comments (default: true unless --no-comments)
     pub comments: bool,
+    /// Show type signatures (--types / -t)
+    pub types: bool,
     /// Show full metadata blocks (multi-line) vs first line only
     pub full: bool,
     /// Optional prefix to add before each metadata line (e.g., "# ")
@@ -152,6 +154,27 @@ impl MetadataConfig {
     pub fn comments_only(full: bool) -> Self {
         Self {
             comments: true,
+            types: false,
+            full,
+            prefix: None,
+        }
+    }
+
+    /// Create a config that shows type signatures only.
+    pub fn types_only(full: bool) -> Self {
+        Self {
+            comments: false,
+            types: true,
+            full,
+            prefix: None,
+        }
+    }
+
+    /// Create a config that shows both comments and types.
+    pub fn all(full: bool) -> Self {
+        Self {
+            comments: true,
+            types: true,
             full,
             prefix: None,
         }
@@ -161,6 +184,7 @@ impl MetadataConfig {
     pub fn none() -> Self {
         Self {
             comments: false,
+            types: false,
             full: false,
             prefix: None,
         }
@@ -227,16 +251,29 @@ mod tests {
     fn test_metadata_config_defaults() {
         let config = MetadataConfig::default();
         assert!(!config.comments);
+        assert!(!config.types);
         assert!(!config.full);
         assert!(config.prefix.is_none());
 
         let comments = MetadataConfig::comments_only(true);
         assert!(comments.comments);
+        assert!(!comments.types);
         assert!(comments.full);
         assert!(comments.prefix.is_none());
 
+        let types = MetadataConfig::types_only(true);
+        assert!(!types.comments);
+        assert!(types.types);
+        assert!(types.full);
+
+        let all = MetadataConfig::all(false);
+        assert!(all.comments);
+        assert!(all.types);
+        assert!(!all.full);
+
         let none = MetadataConfig::none();
         assert!(!none.comments);
+        assert!(!none.types);
         assert!(!none.full);
     }
 

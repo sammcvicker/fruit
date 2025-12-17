@@ -7,6 +7,8 @@ use serde::Serialize;
 
 use crate::comments::extract_first_comment;
 use crate::git::{GitFilter, GitignoreFilter};
+use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
+use crate::types::extract_type_signatures;
 
 /// File filter that can use either gitignore patterns or git tracking status.
 pub enum FileFilter {
@@ -63,6 +65,7 @@ pub struct WalkerConfig {
     pub max_depth: Option<usize>,
     pub dirs_only: bool,
     pub extract_comments: bool,
+    pub extract_types: bool,
     pub ignore_patterns: Vec<String>,
 }
 
@@ -240,12 +243,12 @@ pub struct StreamingWalker {
     filter: Option<FileFilter>,
 }
 
-/// Callback for streaming output - receives name, comment, is_dir, is_last, prefix
+/// Callback for streaming output - receives name, metadata, is_dir, is_last, prefix
 pub trait StreamingOutput {
     fn output_node(
         &mut self,
         name: &str,
-        comment: Option<&str>,
+        metadata: Option<MetadataBlock>,
         is_dir: bool,
         is_last: bool,
         prefix: &str,
@@ -353,7 +356,7 @@ impl StreamingWalker {
 
         // We need to peek ahead to know which entries will actually produce output
         // to determine is_last correctly
-        let mut valid_entries: Vec<(std::fs::DirEntry, bool, Option<String>)> = Vec::new();
+        let mut valid_entries: Vec<(std::fs::DirEntry, bool, Option<MetadataBlock>)> = Vec::new();
 
         for entry in filtered_entries {
             let entry_path = entry.path();
@@ -365,12 +368,8 @@ impl StreamingWalker {
                 if !self.should_include(&entry_path) {
                     continue;
                 }
-                let comment = if self.config.extract_comments {
-                    extract_first_comment(&entry_path)
-                } else {
-                    None
-                };
-                valid_entries.push((entry, false, comment));
+                let metadata = self.extract_metadata(&entry_path);
+                valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
                 if self.config.dirs_only || self.has_included_files(&entry_path) {
@@ -381,7 +380,7 @@ impl StreamingWalker {
 
         let total = valid_entries.len();
 
-        for (i, (entry, is_dir, comment)) in valid_entries.into_iter().enumerate() {
+        for (i, (entry, is_dir, metadata)) in valid_entries.into_iter().enumerate() {
             let entry_path = entry.path();
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let is_last = i == total - 1;
@@ -406,14 +405,7 @@ impl StreamingWalker {
                     file_count += f;
                 }
             } else {
-                output.output_node(
-                    &entry_name,
-                    comment.as_deref(),
-                    false,
-                    is_last,
-                    prefix,
-                    false,
-                )?;
+                output.output_node(&entry_name, metadata, false, is_last, prefix, false)?;
                 file_count += 1;
             }
         }
@@ -459,6 +451,35 @@ impl StreamingWalker {
         }
 
         false
+    }
+
+    /// Extract metadata (comments and/or type signatures) from a file.
+    fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
+        let mut lines = Vec::new();
+
+        // Extract comments first (they appear at the top)
+        if self.config.extract_comments {
+            if let Some(comment) = extract_first_comment(path) {
+                for line in comment.lines() {
+                    lines.push(MetadataLine::new(line.to_string()));
+                }
+            }
+        }
+
+        // Extract type signatures
+        if self.config.extract_types {
+            if let Some(signatures) = extract_type_signatures(path) {
+                for sig in signatures {
+                    lines.push(MetadataLine::with_style(sig, LineStyle::TypeSignature));
+                }
+            }
+        }
+
+        if lines.is_empty() {
+            None
+        } else {
+            Some(MetadataBlock::new("combined", lines))
+        }
     }
 }
 

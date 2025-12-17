@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--types` / `-t` flag to show exported type signatures (#21)
+  - Extracts public/exported APIs using regex patterns
+  - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
+  - Combine with comments: `fruit -tf` for both comments and types
+  - Types only: `fruit -t --no-comments`
+  - Type signatures display in cyan for visual distinction from comments
 - `--prefix` / `-p` flag to specify a custom prefix for metadata lines (#24)
   - Example: `fruit --prefix "# "` for hash prefix, `fruit -p "// "` for C-style
 - Generic metadata block abstraction for extensible file info display (#19)

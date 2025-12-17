@@ -512,7 +512,7 @@ impl StreamingOutput for StreamingFormatter {
     fn output_node(
         &mut self,
         name: &str,
-        comment: Option<&str>,
+        metadata: Option<MetadataBlock>,
         is_dir: bool,
         is_last: bool,
         prefix: &str,
@@ -541,9 +541,7 @@ impl StreamingOutput for StreamingFormatter {
             write!(self.stdout, "{}", name)?;
             self.stdout.reset()?;
 
-            if let Some(c) = comment {
-                // Convert comment to metadata block for unified handling
-                let block = MetadataBlock::from_text("comments", c);
+            if let Some(block) = metadata {
                 self.print_metadata_block(&block, prefix, is_last)?;
             } else {
                 writeln!(self.stdout)?;

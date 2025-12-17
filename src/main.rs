@@ -83,6 +83,10 @@ struct Args {
     #[arg(long = "no-comments")]
     no_comments: bool,
 
+    /// Show exported type signatures (functions, classes, interfaces, etc.)
+    #[arg(short = 't', long = "types")]
+    types: bool,
+
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
     wrap: usize,
@@ -104,6 +108,7 @@ fn main() {
         max_depth: args.level,
         dirs_only: args.dirs_only,
         extract_comments: !args.no_comments,
+        extract_types: args.types,
         ignore_patterns: args.ignore.clone(),
     };
 
@@ -153,10 +158,13 @@ fn main() {
             }
         }
 
-        let metadata_config = if args.no_comments {
-            MetadataConfig::none()
-        } else {
-            let config = MetadataConfig::comments_only(args.full_comment);
+        let metadata_config = {
+            let config = match (args.no_comments, args.types) {
+                (true, false) => MetadataConfig::none(),
+                (true, true) => MetadataConfig::types_only(args.full_comment),
+                (false, true) => MetadataConfig::all(args.full_comment),
+                (false, false) => MetadataConfig::comments_only(args.full_comment),
+            };
             match &args.prefix {
                 Some(prefix) => config.with_prefix(prefix),
                 None => config,

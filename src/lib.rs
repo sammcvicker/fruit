@@ -5,6 +5,7 @@ pub mod git;
 pub mod metadata;
 pub mod output;
 pub mod tree;
+pub mod types;
 
 pub use comments::extract_first_comment;
 pub use git::{GitFilter, GitignoreFilter};
@@ -13,3 +14,4 @@ pub use metadata::{
 };
 pub use output::{OutputConfig, StreamingFormatter, TreeFormatter, print_json};
 pub use tree::{FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};
+pub use types::{TypeExtractor, extract_type_signatures};
