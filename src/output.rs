@@ -133,15 +133,36 @@ impl TreeFormatter {
             writeln!(stdout, "{}", continuation_prefix)?;
 
             // Metadata lines with per-line styling
-            for meta_line in &lines {
+            let mut prev_indent: Option<usize> = None;
+            for (i, meta_line) in lines.iter().enumerate() {
                 let content = meta_line.content.trim();
 
                 // Empty line is a separator
                 if content.is_empty() {
                     stdout.reset()?;
                     writeln!(stdout, "{}", continuation_prefix)?;
+                    prev_indent = None; // Reset indent tracking after separator
                     continue;
                 }
+
+                // Check if next non-empty line is indented (this item has children)
+                let has_indented_children = lines[i + 1..]
+                    .iter()
+                    .find(|l| !l.content.trim().is_empty())
+                    .is_some_and(|next| next.indent > meta_line.indent);
+
+                // Add blank line before baseline items that start a new "group":
+                // - When returning to baseline after indented content
+                // - When this baseline item has indented children (it's a group header)
+                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
+                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
+                    // But not before the very first item
+                    if prev_indent.is_some() {
+                        stdout.reset()?;
+                        writeln!(stdout, "{}", continuation_prefix)?;
+                    }
+                }
+                prev_indent = Some(meta_line.indent);
 
                 let wrapped = if let Some(width) = wrap_width {
                     wrap_text(content, width)
@@ -561,20 +582,39 @@ impl StreamingFormatter {
 
             // Skip the first line (already shown inline) and the separator after it
             let skip_count = if block.has_both() { 2 } else { 1 };
+            let remaining_lines: Vec<_> = lines.iter().skip(skip_count).collect();
 
             // Blank line before remaining content
             self.stdout.reset()?;
             writeln!(self.stdout, "{}", continuation_prefix)?;
 
-            for meta_line in lines.iter().skip(skip_count) {
+            let mut prev_indent: Option<usize> = None;
+            for (i, meta_line) in remaining_lines.iter().enumerate() {
                 let content = meta_line.content.trim();
 
                 // Empty line is a separator between sections
                 if content.is_empty() {
                     self.stdout.reset()?;
                     writeln!(self.stdout, "{}", continuation_prefix)?;
+                    prev_indent = None;
                     continue;
                 }
+
+                // Check if next non-empty line is indented (this item has children)
+                let has_indented_children = remaining_lines[i + 1..]
+                    .iter()
+                    .find(|l| !l.content.trim().is_empty())
+                    .is_some_and(|next| next.indent > meta_line.indent);
+
+                // Add blank line before baseline items that start a new "group"
+                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
+                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
+                    if prev_indent.is_some() {
+                        self.stdout.reset()?;
+                        writeln!(self.stdout, "{}", continuation_prefix)?;
+                    }
+                }
+                prev_indent = Some(meta_line.indent);
 
                 let wrapped = if let Some(width) = wrap_width {
                     wrap_text(content, width)
@@ -624,15 +664,33 @@ impl StreamingFormatter {
             writeln!(self.stdout, "{}", continuation_prefix)?;
 
             // Metadata lines with per-line styling
-            for meta_line in &lines {
+            let mut prev_indent: Option<usize> = None;
+            for (i, meta_line) in lines.iter().enumerate() {
                 let content = meta_line.content.trim();
 
                 // Empty line is a separator between sections
                 if content.is_empty() {
                     self.stdout.reset()?;
                     writeln!(self.stdout, "{}", continuation_prefix)?;
+                    prev_indent = None;
                     continue;
                 }
+
+                // Check if next non-empty line is indented (this item has children)
+                let has_indented_children = lines[i + 1..]
+                    .iter()
+                    .find(|l| !l.content.trim().is_empty())
+                    .is_some_and(|next| next.indent > meta_line.indent);
+
+                // Add blank line before baseline items that start a new "group"
+                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
+                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
+                    if prev_indent.is_some() {
+                        self.stdout.reset()?;
+                        writeln!(self.stdout, "{}", continuation_prefix)?;
+                    }
+                }
+                prev_indent = Some(meta_line.indent);
 
                 let wrapped = if let Some(width) = wrap_width {
                     wrap_text(content, width)
