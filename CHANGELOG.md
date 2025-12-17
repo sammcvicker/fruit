@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--prefix` / `-p` flag to specify a custom prefix for metadata lines (#24)
+  - Example: `fruit --prefix "# "` for hash prefix, `fruit -p "// "` for C-style
 - Generic metadata block abstraction for extensible file info display (#19)
   - `MetadataBlock` and `MetadataLine` types for structured metadata
   - `MetadataExtractor` trait for pluggable metadata sources

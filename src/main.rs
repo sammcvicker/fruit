@@ -90,6 +90,10 @@ struct Args {
     /// Output in JSON format
     #[arg(long = "json")]
     json: bool,
+
+    /// Prefix for metadata lines (e.g., "# " or "// ")
+    #[arg(short = 'p', long = "prefix")]
+    prefix: Option<String>,
 }
 
 fn main() {
@@ -149,13 +153,19 @@ fn main() {
             }
         }
 
+        let metadata_config = if args.no_comments {
+            MetadataConfig::none()
+        } else {
+            let config = MetadataConfig::comments_only(args.full_comment);
+            match &args.prefix {
+                Some(prefix) => config.with_prefix(prefix),
+                None => config,
+            }
+        };
+
         let output_config = OutputConfig {
             use_color: should_use_color(args.color),
-            metadata: if args.no_comments {
-                MetadataConfig::none()
-            } else {
-                MetadataConfig::comments_only(args.full_comment)
-            },
+            metadata: metadata_config,
             wrap_width: if args.wrap == 0 {
                 None
             } else {
