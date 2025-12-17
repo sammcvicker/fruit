@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Indentation hierarchy preserved in type signature display (#25)
   - Methods and nested items now display indented under their parent types
   - Source indentation is preserved (tabs normalized to 4 spaces)
+  - Blank lines separate groups (classes with methods are visually distinct)
   - Makes class/method relationships visible at a glance
 - `--types` / `-t` flag to show exported type signatures (#21)
   - Extracts public/exported APIs using regex patterns
