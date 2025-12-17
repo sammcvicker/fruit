@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Generic metadata block abstraction for extensible file info display (#19)
+  - `MetadataBlock` and `MetadataLine` types for structured metadata
+  - `MetadataExtractor` trait for pluggable metadata sources
+  - `CommentExtractor` implementation for existing comment extraction
+  - `LineStyle` enum for per-line coloring (enables future type signatures, etc.)
+  - Foundation for future features: type signatures, code structure display
+
 ### Changed
 
 - Redesigned full comment display (`-f`) to use metadata block pattern (#18)
@@ -14,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Each comment line has its own `#` prefix for clarity
   - Multi-line comments get a visual buffer line for separation
   - Default mode (inline first-line) unchanged
+- Refactored `OutputConfig` to use `MetadataConfig` for cleaner configuration (#19)
 
 ## [0.2.0] - 2025-12-15
 

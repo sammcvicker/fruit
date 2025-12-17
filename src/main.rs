@@ -6,8 +6,8 @@ use std::process;
 
 use clap::{Parser, ValueEnum};
 use fruit::{
-    GitignoreFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
-    print_json,
+    GitignoreFilter, MetadataConfig, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker,
+    WalkerConfig, print_json,
 };
 
 /// Color output mode
@@ -151,7 +151,11 @@ fn main() {
 
         let output_config = OutputConfig {
             use_color: should_use_color(args.color),
-            show_full_comment: args.full_comment,
+            metadata: if args.no_comments {
+                MetadataConfig::none()
+            } else {
+                MetadataConfig::comments_only(args.full_comment)
+            },
             wrap_width: if args.wrap == 0 {
                 None
             } else {

@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
+use crate::metadata::{MetadataBlock, MetadataConfig};
 use crate::tree::{StreamingOutput, TreeNode};
 
 /// Print tree node as pretty-printed JSON to stdout.
@@ -18,15 +19,23 @@ const DEFAULT_WRAP_WIDTH: usize = 100;
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
     pub use_color: bool,
-    pub show_full_comment: bool,
+    /// Metadata display configuration
+    pub metadata: MetadataConfig,
     pub wrap_width: Option<usize>,
+}
+
+impl OutputConfig {
+    /// Check if full metadata blocks should be shown (vs first line only).
+    pub fn show_full(&self) -> bool {
+        self.metadata.full
+    }
 }
 
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             use_color: true,
-            show_full_comment: false,
+            metadata: MetadataConfig::comments_only(false),
             wrap_width: Some(DEFAULT_WRAP_WIDTH),
         }
     }
@@ -64,6 +73,148 @@ impl TreeFormatter {
         Ok(())
     }
 
+    /// Print a metadata block with colors to stdout.
+    fn print_metadata_block(
+        &self,
+        stdout: &mut StandardStream,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) -> io::Result<()> {
+        if block.is_empty() {
+            writeln!(stdout)?;
+            return Ok(());
+        }
+
+        if self.config.show_full() {
+            // Full metadata mode: display in a block beneath filename
+            writeln!(stdout)?; // End the filename line
+
+            // Continuation prefix for lines below the filename
+            let continuation_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            // Calculate available width for text wrapping
+            let prefix_width = continuation_prefix.chars().count();
+            let wrap_width = self
+                .config
+                .wrap_width
+                .map(|w| w.saturating_sub(prefix_width))
+                .filter(|&w| w > 10);
+
+            // Blank line before block
+            stdout.reset()?;
+            writeln!(stdout, "{}", continuation_prefix)?;
+
+            // Metadata lines with per-line styling
+            for meta_line in &block.lines {
+                let content = meta_line.content.trim();
+                let wrapped = if let Some(width) = wrap_width {
+                    wrap_text(content, width)
+                } else {
+                    vec![content.to_string()]
+                };
+
+                for wrapped_line in wrapped.iter() {
+                    stdout.reset()?;
+                    write!(stdout, "{}", continuation_prefix)?;
+                    stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(meta_line.style.color()))
+                            .set_intense(meta_line.style.is_intense()),
+                    )?;
+                    writeln!(stdout, "{}", wrapped_line)?;
+                }
+            }
+
+            // Blank line after block
+            stdout.reset()?;
+            writeln!(stdout, "{}", continuation_prefix)?;
+        } else {
+            // Single-line mode: show first line with prefix
+            if let Some(first) = block.lines.first() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                writeln!(stdout, "  # {}", first_line(&first.content))?;
+            } else {
+                writeln!(stdout)?;
+            }
+        }
+        stdout.reset()?;
+        Ok(())
+    }
+
+    /// Format a metadata block to plain text output.
+    fn format_metadata_block_plain(
+        &self,
+        output: &mut String,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) {
+        if block.is_empty() {
+            output.push('\n');
+            return;
+        }
+
+        if self.config.show_full() {
+            // Full metadata mode: display in a block beneath filename
+            output.push('\n'); // End the filename line
+
+            // Continuation prefix for lines below the filename
+            let continuation_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            // Calculate available width for text wrapping
+            let prefix_width = continuation_prefix.chars().count();
+            let wrap_width = self
+                .config
+                .wrap_width
+                .map(|w| w.saturating_sub(prefix_width))
+                .filter(|&w| w > 10);
+
+            // Blank line before block
+            output.push_str(&continuation_prefix);
+            output.push('\n');
+
+            // Metadata lines
+            for line in &block.lines {
+                let content = line.content.trim();
+                let wrapped = if let Some(width) = wrap_width {
+                    wrap_text(content, width)
+                } else {
+                    vec![content.to_string()]
+                };
+
+                for wrapped_line in wrapped.iter() {
+                    output.push_str(&continuation_prefix);
+                    output.push_str(wrapped_line);
+                    output.push('\n');
+                }
+            }
+
+            // Blank line after block
+            output.push_str(&continuation_prefix);
+            output.push('\n');
+        } else {
+            // Single-line mode: show first line with prefix
+            if let Some(first) = block.lines.first() {
+                output.push_str("  # ");
+                output.push_str(first_line(&first.content));
+            }
+            output.push('\n');
+        }
+    }
+
     fn format_node(
         &self,
         node: &TreeNode,
@@ -80,54 +231,9 @@ impl TreeFormatter {
                 output.push_str(connector);
                 output.push_str(name);
                 if let Some(c) = comment {
-                    if self.config.show_full_comment {
-                        // Full comment mode: display comments in a metadata block beneath filename
-                        output.push('\n'); // End the filename line
-
-                        // Continuation prefix for lines below the filename
-                        let continuation_prefix = if is_last {
-                            format!("{}    ", prefix)
-                        } else {
-                            format!("{}│   ", prefix)
-                        };
-
-                        // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count();
-                        let wrap_width = self
-                            .config
-                            .wrap_width
-                            .map(|w| w.saturating_sub(prefix_width))
-                            .filter(|&w| w > 10);
-
-                        let comment = c.trim();
-
-                        // Blank line before comment block
-                        output.push_str(&continuation_prefix);
-                        output.push('\n');
-
-                        // Comment lines
-                        for line in comment.lines() {
-                            let wrapped = if let Some(width) = wrap_width {
-                                wrap_text(line, width)
-                            } else {
-                                vec![line.to_string()]
-                            };
-
-                            for wrapped_line in wrapped.iter() {
-                                output.push_str(&continuation_prefix);
-                                output.push_str(wrapped_line);
-                                output.push('\n');
-                            }
-                        }
-
-                        // Blank line after comment block
-                        output.push_str(&continuation_prefix);
-                        output.push('\n');
-                    } else {
-                        output.push_str("  # ");
-                        output.push_str(first_line(c));
-                        output.push('\n');
-                    }
+                    // Convert comment to metadata block for unified handling
+                    let block = MetadataBlock::from_text("comments", c);
+                    self.format_metadata_block_plain(output, &block, prefix, is_last);
                 } else {
                     output.push('\n');
                 }
@@ -189,68 +295,9 @@ impl TreeFormatter {
                 stdout.reset()?;
 
                 if let Some(c) = comment {
-                    if self.config.show_full_comment {
-                        // Full comment mode: display comments in a metadata block beneath filename
-                        writeln!(stdout)?; // End the filename line
-
-                        // Continuation prefix for lines below the filename
-                        let continuation_prefix = if is_last {
-                            format!("{}    ", prefix)
-                        } else {
-                            format!("{}│   ", prefix)
-                        };
-
-                        // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count();
-                        let wrap_width = self
-                            .config
-                            .wrap_width
-                            .map(|w| w.saturating_sub(prefix_width))
-                            .filter(|&w| w > 10);
-
-                        let comment = c.trim();
-
-                        // Blank line before comment block
-                        stdout.reset()?;
-                        writeln!(stdout, "{}", continuation_prefix)?;
-
-                        // Comment lines
-                        stdout.set_color(
-                            ColorSpec::new()
-                                .set_fg(Some(Color::Black))
-                                .set_intense(true),
-                        )?;
-                        for line in comment.lines() {
-                            let wrapped = if let Some(width) = wrap_width {
-                                wrap_text(line, width)
-                            } else {
-                                vec![line.to_string()]
-                            };
-
-                            for wrapped_line in wrapped.iter() {
-                                stdout.reset()?;
-                                write!(stdout, "{}", continuation_prefix)?;
-                                stdout.set_color(
-                                    ColorSpec::new()
-                                        .set_fg(Some(Color::Black))
-                                        .set_intense(true),
-                                )?;
-                                writeln!(stdout, "{}", wrapped_line)?;
-                            }
-                        }
-
-                        // Blank line after comment block
-                        stdout.reset()?;
-                        writeln!(stdout, "{}", continuation_prefix)?;
-                    } else {
-                        stdout.set_color(
-                            ColorSpec::new()
-                                .set_fg(Some(Color::Black))
-                                .set_intense(true),
-                        )?;
-                        writeln!(stdout, "  # {}", first_line(c))?;
-                    }
-                    stdout.reset()?;
+                    // Convert comment to metadata block for unified handling
+                    let block = MetadataBlock::from_text("comments", c);
+                    self.print_metadata_block(stdout, &block, prefix, is_last)?;
                 } else {
                     writeln!(stdout)?;
                 }
@@ -320,6 +367,82 @@ impl StreamingFormatter {
             stdout: StandardStream::stdout(choice),
         }
     }
+
+    /// Print a metadata block with colors to stdout.
+    fn print_metadata_block(
+        &mut self,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) -> io::Result<()> {
+        if block.is_empty() {
+            writeln!(self.stdout)?;
+            return Ok(());
+        }
+
+        if self.config.show_full() {
+            // Full metadata mode: display in a block beneath filename
+            writeln!(self.stdout)?; // End the filename line
+
+            // Continuation prefix for lines below the filename
+            let continuation_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            // Calculate available width for text wrapping
+            let prefix_width = continuation_prefix.chars().count();
+            let wrap_width = self
+                .config
+                .wrap_width
+                .map(|w| w.saturating_sub(prefix_width))
+                .filter(|&w| w > 10);
+
+            // Blank line before block
+            self.stdout.reset()?;
+            writeln!(self.stdout, "{}", continuation_prefix)?;
+
+            // Metadata lines with per-line styling
+            for meta_line in &block.lines {
+                let content = meta_line.content.trim();
+                let wrapped = if let Some(width) = wrap_width {
+                    wrap_text(content, width)
+                } else {
+                    vec![content.to_string()]
+                };
+
+                for wrapped_line in wrapped.iter() {
+                    self.stdout.reset()?;
+                    write!(self.stdout, "{}", continuation_prefix)?;
+                    self.stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(meta_line.style.color()))
+                            .set_intense(meta_line.style.is_intense()),
+                    )?;
+                    writeln!(self.stdout, "{}", wrapped_line)?;
+                }
+            }
+
+            // Blank line after block
+            self.stdout.reset()?;
+            writeln!(self.stdout, "{}", continuation_prefix)?;
+        } else {
+            // Single-line mode: show first line with prefix
+            if let Some(first) = block.lines.first() {
+                self.stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                writeln!(self.stdout, "  # {}", first_line(&first.content))?;
+            } else {
+                writeln!(self.stdout)?;
+            }
+        }
+        self.stdout.reset()?;
+        Ok(())
+    }
 }
 
 impl StreamingOutput for StreamingFormatter {
@@ -356,68 +479,9 @@ impl StreamingOutput for StreamingFormatter {
             self.stdout.reset()?;
 
             if let Some(c) = comment {
-                if self.config.show_full_comment {
-                    // Full comment mode: display comments in a metadata block beneath filename
-                    writeln!(self.stdout)?; // End the filename line
-
-                    // Continuation prefix for lines below the filename
-                    let continuation_prefix = if is_last {
-                        format!("{}    ", prefix)
-                    } else {
-                        format!("{}│   ", prefix)
-                    };
-
-                    // Calculate available width for text wrapping
-                    let prefix_width = continuation_prefix.chars().count();
-                    let wrap_width = self
-                        .config
-                        .wrap_width
-                        .map(|w| w.saturating_sub(prefix_width))
-                        .filter(|&w| w > 10);
-
-                    let comment = c.trim();
-
-                    // Blank line before comment block
-                    self.stdout.reset()?;
-                    writeln!(self.stdout, "{}", continuation_prefix)?;
-
-                    // Comment lines
-                    self.stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(Color::Black))
-                            .set_intense(true),
-                    )?;
-                    for line in comment.lines() {
-                        let wrapped = if let Some(width) = wrap_width {
-                            wrap_text(line, width)
-                        } else {
-                            vec![line.to_string()]
-                        };
-
-                        for wrapped_line in wrapped.iter() {
-                            self.stdout.reset()?;
-                            write!(self.stdout, "{}", continuation_prefix)?;
-                            self.stdout.set_color(
-                                ColorSpec::new()
-                                    .set_fg(Some(Color::Black))
-                                    .set_intense(true),
-                            )?;
-                            writeln!(self.stdout, "{}", wrapped_line)?;
-                        }
-                    }
-
-                    // Blank line after comment block
-                    self.stdout.reset()?;
-                    writeln!(self.stdout, "{}", continuation_prefix)?;
-                } else {
-                    self.stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(Color::Black))
-                            .set_intense(true),
-                    )?;
-                    writeln!(self.stdout, "  # {}", first_line(c))?;
-                }
-                self.stdout.reset()?;
+                // Convert comment to metadata block for unified handling
+                let block = MetadataBlock::from_text("comments", c);
+                self.print_metadata_block(&block, prefix, is_last)?;
             } else {
                 writeln!(self.stdout)?;
             }
@@ -548,7 +612,7 @@ mod tests {
         let tree = sample_tree();
         let formatter = TreeFormatter::new(OutputConfig {
             use_color: false,
-            show_full_comment: false,
+            metadata: MetadataConfig::comments_only(false),
             wrap_width: None,
         });
         let output = formatter.format(&tree);
