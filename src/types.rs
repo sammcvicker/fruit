@@ -8,7 +8,7 @@ use regex::Regex;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::metadata::{LineStyle, MetadataBlock, MetadataExtractor, MetadataLine};
+use crate::metadata::{MetadataBlock, MetadataExtractor};
 
 /// Maximum file size for type extraction (1MB)
 const MAX_FILE_SIZE: u64 = 1_000_000;
@@ -259,13 +259,7 @@ pub struct TypeExtractor;
 
 impl MetadataExtractor for TypeExtractor {
     fn extract(&self, path: &Path) -> Option<MetadataBlock> {
-        extract_type_signatures(path).map(|signatures| {
-            let lines = signatures
-                .into_iter()
-                .map(|sig| MetadataLine::with_style(sig, LineStyle::TypeSignature))
-                .collect();
-            MetadataBlock::new("types", lines)
-        })
+        extract_type_signatures(path).map(MetadataBlock::from_types)
     }
 
     fn name(&self) -> &'static str {

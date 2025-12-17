@@ -10,6 +10,9 @@ use crate::git::{GitFilter, GitignoreFilter};
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
 use crate::types::extract_type_signatures;
 
+// Re-export for convenience
+pub use crate::metadata::MetadataOrder;
+
 /// File filter that can use either gitignore patterns or git tracking status.
 pub enum FileFilter {
     /// Filter based on .gitignore patterns (default)
@@ -455,31 +458,29 @@ impl StreamingWalker {
 
     /// Extract metadata (comments and/or type signatures) from a file.
     fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
-        let mut lines = Vec::new();
+        let mut block = MetadataBlock::new();
 
-        // Extract comments first (they appear at the top)
+        // Extract comments
         if self.config.extract_comments {
             if let Some(comment) = extract_first_comment(path) {
-                for line in comment.lines() {
-                    lines.push(MetadataLine::new(line.to_string()));
-                }
+                block.comment_lines = comment
+                    .lines()
+                    .map(|line| MetadataLine::new(line.to_string()))
+                    .collect();
             }
         }
 
         // Extract type signatures
         if self.config.extract_types {
             if let Some(signatures) = extract_type_signatures(path) {
-                for sig in signatures {
-                    lines.push(MetadataLine::with_style(sig, LineStyle::TypeSignature));
-                }
+                block.type_lines = signatures
+                    .into_iter()
+                    .map(|sig| MetadataLine::with_style(sig, LineStyle::TypeSignature))
+                    .collect();
             }
         }
 
-        if lines.is_empty() {
-            None
-        } else {
-            Some(MetadataBlock::new("combined", lines))
-        }
+        if block.is_empty() { None } else { Some(block) }
     }
 }
 

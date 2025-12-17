@@ -4,10 +4,10 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process;
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use fruit::{
-    GitignoreFilter, MetadataConfig, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker,
-    WalkerConfig, print_json,
+    GitignoreFilter, MetadataConfig, MetadataOrder, OutputConfig, StreamingFormatter,
+    StreamingWalker, TreeWalker, WalkerConfig, print_json,
 };
 
 /// Color output mode
@@ -79,11 +79,16 @@ struct Args {
     #[arg(long = "color", value_name = "WHEN", default_value = "auto")]
     color: ColorMode,
 
-    /// Disable comment extraction
-    #[arg(long = "no-comments")]
+    /// Show file comments (enabled by default unless -t is specified)
+    #[arg(short = 'c', long = "comments")]
+    comments: bool,
+
+    /// Disable comment extraction (for backwards compatibility)
+    #[arg(long = "no-comments", conflicts_with = "comments")]
     no_comments: bool,
 
     /// Show exported type signatures (functions, classes, interfaces, etc.)
+    /// When specified alone, shows only types in full mode
     #[arg(short = 't', long = "types")]
     types: bool,
 
@@ -100,15 +105,48 @@ struct Args {
     prefix: Option<String>,
 }
 
+/// Determine metadata order based on which flag appeared first in argv
+fn get_metadata_order(matches: &ArgMatches) -> MetadataOrder {
+    let comments_index = matches.index_of("comments");
+    let types_index = matches.index_of("types");
+
+    match (comments_index, types_index) {
+        (Some(c), Some(t)) if c < t => MetadataOrder::CommentsFirst,
+        (Some(c), Some(t)) if t < c => MetadataOrder::TypesFirst,
+        _ => MetadataOrder::CommentsFirst, // default
+    }
+}
+
 fn main() {
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    let args = Args::from_arg_matches(&matches).unwrap();
+
+    // Determine what metadata to show:
+    // - --no-comments: disable comments (for backwards compatibility)
+    // - If neither -c nor -t: show comments (default behavior)
+    // - If only -t: show types only (full mode implied)
+    // - If only -c: show comments
+    // - If both -c and -t: show both
+    let (show_comments, show_types) = if args.no_comments {
+        (false, args.types)
+    } else {
+        match (args.comments, args.types) {
+            (false, false) => (true, false), // default: comments only
+            (false, true) => (false, true),  // -t alone: types only
+            (true, false) => (true, false),  // -c alone: comments only
+            (true, true) => (true, true),    // both: show both
+        }
+    };
+
+    // When -t is specified (alone or with -c), default to full mode
+    let full_mode = args.full_comment || args.types;
 
     let walker_config = WalkerConfig {
         show_all: args.all,
         max_depth: args.level,
         dirs_only: args.dirs_only,
-        extract_comments: !args.no_comments,
-        extract_types: args.types,
+        extract_comments: show_comments,
+        extract_types: show_types,
         ignore_patterns: args.ignore.clone(),
     };
 
@@ -159,16 +197,14 @@ fn main() {
         }
 
         let metadata_config = {
-            let config = match (args.no_comments, args.types) {
-                (true, false) => MetadataConfig::none(),
-                (true, true) => MetadataConfig::types_only(args.full_comment),
-                (false, true) => MetadataConfig::all(args.full_comment),
-                (false, false) => MetadataConfig::comments_only(args.full_comment),
+            let config = MetadataConfig {
+                comments: show_comments,
+                types: show_types,
+                full: full_mode,
+                prefix: args.prefix.clone(),
+                order: get_metadata_order(&matches),
             };
-            match &args.prefix {
-                Some(prefix) => config.with_prefix(prefix),
-                None => config,
-            }
+            config
         };
 
         let output_config = OutputConfig {

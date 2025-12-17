@@ -12,9 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--types` / `-t` flag to show exported type signatures (#21)
   - Extracts public/exported APIs using regex patterns
   - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
-  - Combine with comments: `fruit -tf` for both comments and types
-  - Types only: `fruit -t --no-comments`
+  - When `-t` is specified alone, shows types only in full mode (all signatures)
   - Type signatures display in cyan for visual distinction from comments
+- `--comments` / `-c` flag to explicitly enable comments
+  - Combine with types: `fruit -c -t` shows comments first, then types
+  - Flag order determines display order: `-t -c` shows types first
+
 - `--prefix` / `-p` flag to specify a custom prefix for metadata lines (#24)
   - Example: `fruit --prefix "# "` for hash prefix, `fruit -p "// "` for C-style
 - Generic metadata block abstraction for extensible file info display (#19)
@@ -26,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `-t/--types` alone now implies full mode and types-only (no comments unless `-c` added)
+- Metadata display respects flag order with blank line separator between sections (#21)
+  - `-c -t` shows comments first, `-t -c` shows types first
+- Single-line first metadata always displays inline (to the right of filename)
 - Redesigned full comment display (`-f`) to use metadata block pattern (#18)
   - Comments now appear on separate lines beneath the filename
   - Each comment line has its own `#` prefix for clarity

@@ -87,11 +87,12 @@ impl TreeFormatter {
         }
 
         let meta_prefix = self.config.metadata.prefix_str();
-        let is_single_line = block.lines.len() == 1;
+        let order = self.config.metadata.order;
+        let lines = block.lines_in_order(order);
 
-        // Single-line metadata always displays inline, regardless of full mode
-        if is_single_line {
-            if let Some(first) = block.lines.first() {
+        // Not in full mode: show first line inline only
+        if !self.config.show_full() {
+            if let Some(first) = block.first_line(order) {
                 stdout.set_color(
                     ColorSpec::new()
                         .set_fg(Some(first.style.color()))
@@ -104,8 +105,8 @@ impl TreeFormatter {
             return Ok(());
         }
 
-        // Multi-line metadata
-        if self.config.show_full() {
+        // Full mode: multi-line metadata
+        {
             // Full metadata mode: display in a block beneath filename
             writeln!(stdout)?; // End the filename line
 
@@ -129,8 +130,15 @@ impl TreeFormatter {
             writeln!(stdout, "{}", continuation_prefix)?;
 
             // Metadata lines with per-line styling
-            for meta_line in &block.lines {
+            for meta_line in &lines {
                 let content = meta_line.content.trim();
+
+                // Empty line is a separator
+                if content.is_empty() {
+                    writeln!(stdout, "{}", continuation_prefix)?;
+                    continue;
+                }
+
                 let wrapped = if let Some(width) = wrap_width {
                     wrap_text(content, width)
                 } else {
@@ -152,17 +160,6 @@ impl TreeFormatter {
             // Blank line after block
             stdout.reset()?;
             writeln!(stdout, "{}", continuation_prefix)?;
-        } else {
-            // Not in full mode: show first line inline
-            if let Some(first) = block.lines.first() {
-                stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
-                )?;
-                write!(stdout, "  {}{}", meta_prefix, first_line(&first.content))?;
-            }
-            writeln!(stdout)?;
         }
         stdout.reset()?;
         Ok(())
@@ -182,11 +179,12 @@ impl TreeFormatter {
         }
 
         let meta_prefix = self.config.metadata.prefix_str();
-        let is_single_line = block.lines.len() == 1;
+        let order = self.config.metadata.order;
+        let lines = block.lines_in_order(order);
 
-        // Single-line metadata always displays inline, regardless of full mode
-        if is_single_line {
-            if let Some(first) = block.lines.first() {
+        // Not in full mode: show first line inline only
+        if !self.config.show_full() {
+            if let Some(first) = block.first_line(order) {
                 output.push_str("  ");
                 output.push_str(meta_prefix);
                 output.push_str(first_line(&first.content));
@@ -195,59 +193,56 @@ impl TreeFormatter {
             return;
         }
 
-        // Multi-line metadata
-        if self.config.show_full() {
-            // Full metadata mode: display in a block beneath filename
-            output.push('\n'); // End the filename line
+        // Full mode: display in a block beneath filename
+        output.push('\n'); // End the filename line
 
-            // Continuation prefix for lines below the filename
-            let continuation_prefix = if is_last {
-                format!("{}    ", prefix)
+        // Continuation prefix for lines below the filename
+        let continuation_prefix = if is_last {
+            format!("{}    ", prefix)
+        } else {
+            format!("{}│   ", prefix)
+        };
+
+        // Calculate available width for text wrapping
+        let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
+        let wrap_width = self
+            .config
+            .wrap_width
+            .map(|w| w.saturating_sub(prefix_width))
+            .filter(|&w| w > 10);
+
+        // Blank line before block
+        output.push_str(&continuation_prefix);
+        output.push('\n');
+
+        // Metadata lines
+        for line in &lines {
+            let content = line.content.trim();
+
+            // Empty line is a separator
+            if content.is_empty() {
+                output.push_str(&continuation_prefix);
+                output.push('\n');
+                continue;
+            }
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
             } else {
-                format!("{}│   ", prefix)
+                vec![content.to_string()]
             };
 
-            // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
-            let wrap_width = self
-                .config
-                .wrap_width
-                .map(|w| w.saturating_sub(prefix_width))
-                .filter(|&w| w > 10);
-
-            // Blank line before block
-            output.push_str(&continuation_prefix);
-            output.push('\n');
-
-            // Metadata lines
-            for line in &block.lines {
-                let content = line.content.trim();
-                let wrapped = if let Some(width) = wrap_width {
-                    wrap_text(content, width)
-                } else {
-                    vec![content.to_string()]
-                };
-
-                for wrapped_line in wrapped.iter() {
-                    output.push_str(&continuation_prefix);
-                    output.push_str(meta_prefix);
-                    output.push_str(wrapped_line);
-                    output.push('\n');
-                }
-            }
-
-            // Blank line after block
-            output.push_str(&continuation_prefix);
-            output.push('\n');
-        } else {
-            // Not in full mode: show first line inline
-            if let Some(first) = block.lines.first() {
-                output.push_str("  ");
+            for wrapped_line in wrapped.iter() {
+                output.push_str(&continuation_prefix);
                 output.push_str(meta_prefix);
-                output.push_str(first_line(&first.content));
+                output.push_str(wrapped_line);
+                output.push('\n');
             }
-            output.push('\n');
         }
+
+        // Blank line after block
+        output.push_str(&continuation_prefix);
+        output.push('\n');
     }
 
     fn format_node(
@@ -267,7 +262,7 @@ impl TreeFormatter {
                 output.push_str(name);
                 if let Some(c) = comment {
                     // Convert comment to metadata block for unified handling
-                    let block = MetadataBlock::from_text("comments", c);
+                    let block = MetadataBlock::from_comments(c);
                     self.format_metadata_block_plain(output, &block, prefix, is_last);
                 } else {
                     output.push('\n');
@@ -331,7 +326,7 @@ impl TreeFormatter {
 
                 if let Some(c) = comment {
                     // Convert comment to metadata block for unified handling
-                    let block = MetadataBlock::from_text("comments", c);
+                    let block = MetadataBlock::from_comments(c);
                     self.print_metadata_block(stdout, &block, prefix, is_last)?;
                 } else {
                     writeln!(stdout)?;
@@ -416,11 +411,15 @@ impl StreamingFormatter {
         }
 
         let meta_prefix = self.config.metadata.prefix_str();
-        let is_single_line = block.lines.len() == 1;
+        let order = self.config.metadata.order;
 
-        // Single-line metadata always displays inline, regardless of full mode
-        if is_single_line {
-            if let Some(first) = block.lines.first() {
+        // Check if the first section (based on order) is a single line
+        let first_is_single = block.first_section_is_single_line(order);
+        let total_lines = block.total_lines();
+
+        // Not in full mode: show first line inline only
+        if !self.config.show_full() {
+            if let Some(first) = block.first_line(order) {
                 self.stdout.set_color(
                     ColorSpec::new()
                         .set_fg(Some(first.style.color()))
@@ -438,10 +437,47 @@ impl StreamingFormatter {
             return Ok(());
         }
 
-        // Multi-line metadata
-        if self.config.show_full() {
-            // Full metadata mode: display in a block beneath filename
-            writeln!(self.stdout)?; // End the filename line
+        // Full mode: show all metadata
+        // Get lines in the configured order (with separator if both types present)
+        let lines = block.lines_in_order(order);
+
+        // If total is just 1 line, show inline
+        if total_lines == 1 {
+            if let Some(first) = block.first_line(order) {
+                self.stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                write!(
+                    self.stdout,
+                    "  {}{}",
+                    meta_prefix,
+                    first_line(&first.content)
+                )?;
+            }
+            writeln!(self.stdout)?;
+            self.stdout.reset()?;
+            return Ok(());
+        }
+
+        // If first section is single line and there's more content, show first inline then rest below
+        if first_is_single {
+            if let Some(first) = block.first_line(order) {
+                self.stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(first.style.color()))
+                        .set_intense(first.style.is_intense()),
+                )?;
+                write!(
+                    self.stdout,
+                    "  {}{}",
+                    meta_prefix,
+                    first_line(&first.content)
+                )?;
+            }
+            writeln!(self.stdout)?;
+            self.stdout.reset()?;
 
             // Continuation prefix for lines below the filename
             let continuation_prefix = if is_last {
@@ -458,13 +494,22 @@ impl StreamingFormatter {
                 .map(|w| w.saturating_sub(prefix_width))
                 .filter(|&w| w > 10);
 
-            // Blank line before block
+            // Skip the first line (already shown inline) and the separator after it
+            let skip_count = if block.has_both() { 2 } else { 1 };
+
+            // Blank line before remaining content
             self.stdout.reset()?;
             writeln!(self.stdout, "{}", continuation_prefix)?;
 
-            // Metadata lines with per-line styling
-            for meta_line in &block.lines {
+            for meta_line in lines.iter().skip(skip_count) {
                 let content = meta_line.content.trim();
+
+                // Empty line is a separator between sections
+                if content.is_empty() {
+                    writeln!(self.stdout, "{}", continuation_prefix)?;
+                    continue;
+                }
+
                 let wrapped = if let Some(width) = wrap_width {
                     wrap_text(content, width)
                 } else {
@@ -487,21 +532,59 @@ impl StreamingFormatter {
             self.stdout.reset()?;
             writeln!(self.stdout, "{}", continuation_prefix)?;
         } else {
-            // Not in full mode: show first line inline
-            if let Some(first) = block.lines.first() {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(first.style.color()))
-                        .set_intense(first.style.is_intense()),
-                )?;
-                write!(
-                    self.stdout,
-                    "  {}{}",
-                    meta_prefix,
-                    first_line(&first.content)
-                )?;
+            // First section has multiple lines, show everything below
+            writeln!(self.stdout)?; // End the filename line
+
+            // Continuation prefix for lines below the filename
+            let continuation_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            // Calculate available width for text wrapping
+            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
+            let wrap_width = self
+                .config
+                .wrap_width
+                .map(|w| w.saturating_sub(prefix_width))
+                .filter(|&w| w > 10);
+
+            // Blank line before block
+            self.stdout.reset()?;
+            writeln!(self.stdout, "{}", continuation_prefix)?;
+
+            // Metadata lines with per-line styling
+            for meta_line in &lines {
+                let content = meta_line.content.trim();
+
+                // Empty line is a separator between sections
+                if content.is_empty() {
+                    writeln!(self.stdout, "{}", continuation_prefix)?;
+                    continue;
+                }
+
+                let wrapped = if let Some(width) = wrap_width {
+                    wrap_text(content, width)
+                } else {
+                    vec![content.to_string()]
+                };
+
+                for wrapped_line in wrapped.iter() {
+                    self.stdout.reset()?;
+                    write!(self.stdout, "{}", continuation_prefix)?;
+                    self.stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(meta_line.style.color()))
+                            .set_intense(meta_line.style.is_intense()),
+                    )?;
+                    writeln!(self.stdout, "{}{}", meta_prefix, wrapped_line)?;
+                }
             }
-            writeln!(self.stdout)?;
+
+            // Blank line after block
+            self.stdout.reset()?;
+            writeln!(self.stdout, "{}", continuation_prefix)?;
         }
         self.stdout.reset()?;
         Ok(())

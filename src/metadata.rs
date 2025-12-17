@@ -69,41 +69,110 @@ impl MetadataLine {
 }
 
 /// A block of metadata lines to display beneath a file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MetadataBlock {
-    /// The lines of metadata
-    pub lines: Vec<MetadataLine>,
-    /// Name of the extractor that produced this block (for debugging/display)
-    pub source: &'static str,
+    /// Comment lines (from file header comments/docstrings)
+    pub comment_lines: Vec<MetadataLine>,
+    /// Type signature lines (from exported functions, classes, etc.)
+    pub type_lines: Vec<MetadataLine>,
 }
 
 impl MetadataBlock {
-    /// Create a new metadata block with the given lines.
-    pub fn new(source: &'static str, lines: Vec<MetadataLine>) -> Self {
-        Self { lines, source }
+    /// Create a new empty metadata block.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Create a metadata block from plain text (one line per newline).
-    pub fn from_text(source: &'static str, text: &str) -> Self {
-        let lines = text
+    /// Create a metadata block with only comment lines.
+    pub fn from_comments(text: &str) -> Self {
+        let comment_lines = text
             .lines()
             .map(|line| MetadataLine::new(line.to_string()))
             .collect();
-        Self { lines, source }
+        Self {
+            comment_lines,
+            type_lines: Vec::new(),
+        }
     }
 
-    /// Create a metadata block from plain text with a specific style.
-    pub fn from_text_styled(source: &'static str, text: &str, style: LineStyle) -> Self {
-        let lines = text
-            .lines()
-            .map(|line| MetadataLine::with_style(line.to_string(), style))
+    /// Create a metadata block with only type lines.
+    pub fn from_types(signatures: Vec<String>) -> Self {
+        let type_lines = signatures
+            .into_iter()
+            .map(|sig| MetadataLine::with_style(sig, LineStyle::TypeSignature))
             .collect();
-        Self { lines, source }
+        Self {
+            comment_lines: Vec::new(),
+            type_lines,
+        }
     }
 
     /// Check if this block has any content.
     pub fn is_empty(&self) -> bool {
-        self.lines.is_empty()
+        self.comment_lines.is_empty() && self.type_lines.is_empty()
+    }
+
+    /// Check if only comments are present (no types).
+    pub fn has_only_comments(&self) -> bool {
+        !self.comment_lines.is_empty() && self.type_lines.is_empty()
+    }
+
+    /// Check if only types are present (no comments).
+    pub fn has_only_types(&self) -> bool {
+        self.comment_lines.is_empty() && !self.type_lines.is_empty()
+    }
+
+    /// Check if both comments and types are present.
+    pub fn has_both(&self) -> bool {
+        !self.comment_lines.is_empty() && !self.type_lines.is_empty()
+    }
+
+    /// Get lines in the specified order, with an empty line between groups if both exist.
+    pub fn lines_in_order(&self, order: MetadataOrder) -> Vec<MetadataLine> {
+        let mut result = Vec::new();
+
+        let (first, second) = match order {
+            MetadataOrder::CommentsFirst => (&self.comment_lines, &self.type_lines),
+            MetadataOrder::TypesFirst => (&self.type_lines, &self.comment_lines),
+        };
+
+        result.extend(first.iter().cloned());
+
+        // Add separator if both groups have content
+        if !first.is_empty() && !second.is_empty() {
+            result.push(MetadataLine::new(String::new())); // empty line separator
+        }
+
+        result.extend(second.iter().cloned());
+
+        result
+    }
+
+    /// Get the first line of metadata (for inline display).
+    /// Returns the first line from the first non-empty group based on order.
+    pub fn first_line(&self, order: MetadataOrder) -> Option<&MetadataLine> {
+        let (first, second) = match order {
+            MetadataOrder::CommentsFirst => (&self.comment_lines, &self.type_lines),
+            MetadataOrder::TypesFirst => (&self.type_lines, &self.comment_lines),
+        };
+
+        first.first().or_else(|| second.first())
+    }
+
+    /// Check if the first metadata section (based on order) has only one line.
+    /// This is used to determine if it should be displayed inline.
+    pub fn first_section_is_single_line(&self, order: MetadataOrder) -> bool {
+        let first = match order {
+            MetadataOrder::CommentsFirst => &self.comment_lines,
+            MetadataOrder::TypesFirst => &self.type_lines,
+        };
+
+        first.len() == 1
+    }
+
+    /// Total number of lines (not counting separator).
+    pub fn total_lines(&self) -> usize {
+        self.comment_lines.len() + self.type_lines.len()
     }
 }
 
@@ -127,8 +196,7 @@ pub struct CommentExtractor;
 
 impl MetadataExtractor for CommentExtractor {
     fn extract(&self, path: &Path) -> Option<MetadataBlock> {
-        crate::comments::extract_first_comment(path)
-            .map(|text| MetadataBlock::from_text("comments", &text))
+        crate::comments::extract_first_comment(path).map(|text| MetadataBlock::from_comments(&text))
     }
 
     fn name(&self) -> &'static str {
@@ -136,10 +204,20 @@ impl MetadataExtractor for CommentExtractor {
     }
 }
 
+/// Order in which to display metadata types when both are enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MetadataOrder {
+    /// Comments first, then types (default)
+    #[default]
+    CommentsFirst,
+    /// Types first, then comments
+    TypesFirst,
+}
+
 /// Configuration for which metadata extractors to use.
 #[derive(Debug, Clone, Default)]
 pub struct MetadataConfig {
-    /// Show comments (default: true unless --no-comments)
+    /// Show comments
     pub comments: bool,
     /// Show type signatures (--types / -t)
     pub types: bool,
@@ -147,6 +225,8 @@ pub struct MetadataConfig {
     pub full: bool,
     /// Optional prefix to add before each metadata line (e.g., "# ")
     pub prefix: Option<String>,
+    /// Order to display metadata when both comments and types are enabled
+    pub order: MetadataOrder,
 }
 
 impl MetadataConfig {
@@ -157,6 +237,7 @@ impl MetadataConfig {
             types: false,
             full,
             prefix: None,
+            order: MetadataOrder::CommentsFirst,
         }
     }
 
@@ -167,16 +248,18 @@ impl MetadataConfig {
             types: true,
             full,
             prefix: None,
+            order: MetadataOrder::TypesFirst,
         }
     }
 
     /// Create a config that shows both comments and types.
-    pub fn all(full: bool) -> Self {
+    pub fn all(full: bool, order: MetadataOrder) -> Self {
         Self {
             comments: true,
             types: true,
             full,
             prefix: None,
+            order,
         }
     }
 
@@ -187,6 +270,7 @@ impl MetadataConfig {
             types: false,
             full: false,
             prefix: None,
+            order: MetadataOrder::CommentsFirst,
         }
     }
 
@@ -221,22 +305,74 @@ mod tests {
     }
 
     #[test]
-    fn test_metadata_block_from_text() {
-        let block = MetadataBlock::from_text("test", "line 1\nline 2\nline 3");
-        assert_eq!(block.lines.len(), 3);
-        assert_eq!(block.lines[0].content, "line 1");
-        assert_eq!(block.lines[1].content, "line 2");
-        assert_eq!(block.lines[2].content, "line 3");
-        assert_eq!(block.source, "test");
+    fn test_metadata_block_from_comments() {
+        let block = MetadataBlock::from_comments("line 1\nline 2\nline 3");
+        assert_eq!(block.comment_lines.len(), 3);
+        assert_eq!(block.comment_lines[0].content, "line 1");
+        assert_eq!(block.comment_lines[1].content, "line 2");
+        assert_eq!(block.comment_lines[2].content, "line 3");
+        assert!(block.type_lines.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_block_from_types() {
+        let block = MetadataBlock::from_types(vec![
+            "pub fn foo()".to_string(),
+            "pub struct Bar".to_string(),
+        ]);
+        assert!(block.comment_lines.is_empty());
+        assert_eq!(block.type_lines.len(), 2);
+        assert_eq!(block.type_lines[0].content, "pub fn foo()");
+        assert_eq!(block.type_lines[0].style, LineStyle::TypeSignature);
     }
 
     #[test]
     fn test_metadata_block_is_empty() {
-        let empty = MetadataBlock::new("test", vec![]);
+        let empty = MetadataBlock::new();
         assert!(empty.is_empty());
 
-        let non_empty = MetadataBlock::from_text("test", "content");
-        assert!(!non_empty.is_empty());
+        let with_comments = MetadataBlock::from_comments("content");
+        assert!(!with_comments.is_empty());
+
+        let with_types = MetadataBlock::from_types(vec!["fn foo()".to_string()]);
+        assert!(!with_types.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_block_lines_in_order() {
+        let mut block = MetadataBlock::new();
+        block.comment_lines = vec![MetadataLine::new("comment".to_string())];
+        block.type_lines = vec![MetadataLine::with_style(
+            "pub fn foo()".to_string(),
+            LineStyle::TypeSignature,
+        )];
+
+        // Comments first order
+        let lines = block.lines_in_order(MetadataOrder::CommentsFirst);
+        assert_eq!(lines.len(), 3); // comment, separator, type
+        assert_eq!(lines[0].content, "comment");
+        assert_eq!(lines[1].content, ""); // separator
+        assert_eq!(lines[2].content, "pub fn foo()");
+
+        // Types first order
+        let lines = block.lines_in_order(MetadataOrder::TypesFirst);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].content, "pub fn foo()");
+        assert_eq!(lines[1].content, ""); // separator
+        assert_eq!(lines[2].content, "comment");
+    }
+
+    #[test]
+    fn test_metadata_block_first_section_single_line() {
+        let mut block = MetadataBlock::new();
+        block.comment_lines = vec![MetadataLine::new("single".to_string())];
+        block.type_lines = vec![
+            MetadataLine::with_style("fn a()".to_string(), LineStyle::TypeSignature),
+            MetadataLine::with_style("fn b()".to_string(), LineStyle::TypeSignature),
+        ];
+
+        assert!(block.first_section_is_single_line(MetadataOrder::CommentsFirst));
+        assert!(!block.first_section_is_single_line(MetadataOrder::TypesFirst));
     }
 
     #[test]
@@ -266,10 +402,14 @@ mod tests {
         assert!(types.types);
         assert!(types.full);
 
-        let all = MetadataConfig::all(false);
+        let all = MetadataConfig::all(false, MetadataOrder::CommentsFirst);
         assert!(all.comments);
         assert!(all.types);
         assert!(!all.full);
+        assert_eq!(all.order, MetadataOrder::CommentsFirst);
+
+        let all_types_first = MetadataConfig::all(true, MetadataOrder::TypesFirst);
+        assert_eq!(all_types_first.order, MetadataOrder::TypesFirst);
 
         let none = MetadataConfig::none();
         assert!(!none.comments);
