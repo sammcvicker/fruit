@@ -13,9 +13,23 @@ use crate::metadata::{MetadataBlock, MetadataExtractor};
 /// Maximum file size for type extraction (1MB)
 const MAX_FILE_SIZE: u64 = 1_000_000;
 
+/// Calculate the indentation level of a line (number of spaces, tabs = 4 spaces).
+fn calculate_indent(line: &str) -> usize {
+    let mut indent = 0;
+    for ch in line.chars() {
+        match ch {
+            ' ' => indent += 1,
+            '\t' => indent += 4,
+            _ => break,
+        }
+    }
+    indent
+}
+
 /// Extract exported type signatures from a file.
-/// Returns a list of (signature, symbol_name) pairs.
-pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String)>> {
+/// Returns a list of (signature, symbol_name, indent_level) tuples.
+/// indent_level is the number of spaces (tabs are converted to 4 spaces).
+pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
     // Skip files that are too large
     if let Ok(metadata) = path.metadata() {
         if metadata.len() > MAX_FILE_SIZE {
@@ -54,7 +68,7 @@ static RUST_PUB_TYPE: LazyLock<Regex> =
 static RUST_PUB_CONST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").unwrap());
 
-fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String)>> {
+fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -69,31 +83,33 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String)>> {
             continue;
         }
 
+        let indent = calculate_indent(line);
+
         // Check each pattern - capture group index varies for fn (has optional async)
         if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         }
     }
 
@@ -114,7 +130,7 @@ static TS_EXPORT_CONST: LazyLock<Regex> =
 static TS_EXPORT_ENUM: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").unwrap());
 
-fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String)>> {
+fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -125,31 +141,33 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String)>>
             continue;
         }
 
+        let indent = calculate_indent(line);
+
         // Check each pattern - capture group index varies for function/class/enum (have optional modifiers)
         if let Some(caps) = TS_EXPORT_FUNCTION.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = TS_EXPORT_INTERFACE.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = TS_EXPORT_TYPE.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = TS_EXPORT_CLASS.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = TS_EXPORT_CONST.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = TS_EXPORT_ENUM.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         }
     }
 
@@ -164,7 +182,7 @@ static JS_EXPORT_CLASS: LazyLock<Regex> =
 static JS_EXPORT_CONST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+)\s*=").unwrap());
 
-fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String)>> {
+fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -175,20 +193,22 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String)>>
             continue;
         }
 
+        let indent = calculate_indent(line);
+
         // Check each pattern
         if let Some(caps) = JS_EXPORT_FUNCTION.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = JS_EXPORT_CLASS.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = JS_EXPORT_CONST.captures(trimmed) {
             // For const, just show the declaration without the value
             let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig.to_string(), sym));
+            signatures.push((sig.to_string(), sym, indent));
         }
     }
 
@@ -202,7 +222,7 @@ static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
 static PY_CLASS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").unwrap());
 
-fn extract_python_signatures(content: &str) -> Option<Vec<(String, String)>> {
+fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -221,19 +241,21 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String)>> {
             continue;
         }
 
+        let indent = calculate_indent(line);
+
         // Check each pattern (async first to avoid partial matches)
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = PY_CLASS.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         }
     }
 
@@ -252,7 +274,7 @@ static GO_EXPORTED_CONST: LazyLock<Regex> =
 static GO_EXPORTED_VAR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").unwrap());
 
-fn extract_go_signatures(content: &str) -> Option<Vec<(String, String)>> {
+fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -263,27 +285,29 @@ fn extract_go_signatures(content: &str) -> Option<Vec<(String, String)>> {
             continue;
         }
 
+        let indent = calculate_indent(line);
+
         // Check each pattern (method before func to get receiver)
         if let Some(caps) = GO_EXPORTED_METHOD.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = GO_EXPORTED_FUNC.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = GO_EXPORTED_TYPE.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         } else if let Some(caps) = GO_EXPORTED_CONST.captures(trimmed) {
             let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig.to_string(), sym));
+            signatures.push((sig.to_string(), sym, indent));
         } else if let Some(caps) = GO_EXPORTED_VAR.captures(trimmed) {
             let sig = clean_signature(caps.get(0).unwrap().as_str());
             let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym));
+            signatures.push((sig, sym, indent));
         }
     }
 

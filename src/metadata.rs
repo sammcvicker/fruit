@@ -50,6 +50,8 @@ pub struct MetadataLine {
     pub style: LineStyle,
     /// Symbol name to highlight (for type signatures)
     pub symbol_name: Option<String>,
+    /// Indentation level (number of spaces) for hierarchy display
+    pub indent: usize,
 }
 
 impl MetadataLine {
@@ -59,6 +61,7 @@ impl MetadataLine {
             content: content.into(),
             style: LineStyle::Comment,
             symbol_name: None,
+            indent: 0,
         }
     }
 
@@ -68,19 +71,22 @@ impl MetadataLine {
             content: content.into(),
             style,
             symbol_name: None,
+            indent: 0,
         }
     }
 
-    /// Create a new metadata line with a style and highlighted symbol name.
+    /// Create a new metadata line with a style, highlighted symbol name, and indentation.
     pub fn with_symbol(
         content: impl Into<String>,
         style: LineStyle,
         symbol_name: impl Into<String>,
+        indent: usize,
     ) -> Self {
         Self {
             content: content.into(),
             style,
             symbol_name: Some(symbol_name.into()),
+            indent,
         }
     }
 }
@@ -112,11 +118,13 @@ impl MetadataBlock {
         }
     }
 
-    /// Create a metadata block with only type lines (signature, symbol_name pairs).
-    pub fn from_types(signatures: Vec<(String, String)>) -> Self {
+    /// Create a metadata block with only type lines (signature, symbol_name, indent tuples).
+    pub fn from_types(signatures: Vec<(String, String, usize)>) -> Self {
         let type_lines = signatures
             .into_iter()
-            .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
+            .map(|(sig, sym, indent)| {
+                MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+            })
             .collect();
         Self {
             comment_lines: Vec::new(),
@@ -334,15 +342,17 @@ mod tests {
     #[test]
     fn test_metadata_block_from_types() {
         let block = MetadataBlock::from_types(vec![
-            ("pub fn foo()".to_string(), "foo".to_string()),
-            ("pub struct Bar".to_string(), "Bar".to_string()),
+            ("pub fn foo()".to_string(), "foo".to_string(), 0),
+            ("pub struct Bar".to_string(), "Bar".to_string(), 4),
         ]);
         assert!(block.comment_lines.is_empty());
         assert_eq!(block.type_lines.len(), 2);
         assert_eq!(block.type_lines[0].content, "pub fn foo()");
         assert_eq!(block.type_lines[0].style, LineStyle::TypeSignature);
         assert_eq!(block.type_lines[0].symbol_name, Some("foo".to_string()));
+        assert_eq!(block.type_lines[0].indent, 0);
         assert_eq!(block.type_lines[1].symbol_name, Some("Bar".to_string()));
+        assert_eq!(block.type_lines[1].indent, 4);
     }
 
     #[test]
@@ -354,7 +364,7 @@ mod tests {
         assert!(!with_comments.is_empty());
 
         let with_types =
-            MetadataBlock::from_types(vec![("fn foo()".to_string(), "foo".to_string())]);
+            MetadataBlock::from_types(vec![("fn foo()".to_string(), "foo".to_string(), 0)]);
         assert!(!with_types.is_empty());
     }
 

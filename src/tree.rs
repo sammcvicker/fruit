@@ -731,7 +731,9 @@ impl StreamingWalker {
             if let Some(signatures) = extract_type_signatures(path) {
                 block.type_lines = signatures
                     .into_iter()
-                    .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
+                    .map(|(sig, sym, indent)| {
+                        MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+                    })
                     .collect();
             }
         }
@@ -765,7 +767,9 @@ fn extract_metadata_from_path(
         if let Some(signatures) = extract_type_signatures(path) {
             block.type_lines = signatures
                 .into_iter()
-                .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
+                .map(|(sig, sym, indent)| {
+                    MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+                })
                 .collect();
         }
     }

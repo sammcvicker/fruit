@@ -100,6 +100,7 @@ impl TreeFormatter {
                     first.symbol_name.as_deref(),
                     first.style.color(),
                     first.style.is_intense(),
+                    first.indent,
                 )?;
             }
             writeln!(stdout)?;
@@ -157,6 +158,7 @@ impl TreeFormatter {
                         meta_line.symbol_name.as_deref(),
                         meta_line.style.color(),
                         meta_line.style.is_intense(),
+                        meta_line.indent,
                     )?;
                     writeln!(stdout)?;
                 }
@@ -384,13 +386,20 @@ fn first_line(s: &str) -> &str {
 }
 
 /// Write a metadata line, highlighting the symbol name in bold red if present.
+/// The `indent` parameter specifies the number of spaces to prepend for hierarchy display.
 fn write_metadata_line_with_symbol(
     stdout: &mut StandardStream,
     content: &str,
     symbol_name: Option<&str>,
     base_color: Color,
     is_intense: bool,
+    indent: usize,
 ) -> io::Result<()> {
+    // Write indentation spaces
+    if indent > 0 {
+        write!(stdout, "{:indent$}", "", indent = indent)?;
+    }
+
     if let Some(sym) = symbol_name {
         // Find the symbol in the content and highlight it
         if let Some(pos) = content.find(sym) {
@@ -489,6 +498,7 @@ impl StreamingFormatter {
                     first.symbol_name.as_deref(),
                     first.style.color(),
                     first.style.is_intense(),
+                    first.indent,
                 )?;
             }
             writeln!(self.stdout)?;
@@ -510,6 +520,7 @@ impl StreamingFormatter {
                     first.symbol_name.as_deref(),
                     first.style.color(),
                     first.style.is_intense(),
+                    first.indent,
                 )?;
             }
             writeln!(self.stdout)?;
@@ -527,6 +538,7 @@ impl StreamingFormatter {
                     first.symbol_name.as_deref(),
                     first.style.color(),
                     first.style.is_intense(),
+                    first.indent,
                 )?;
             }
             writeln!(self.stdout)?;
@@ -579,6 +591,7 @@ impl StreamingFormatter {
                         meta_line.symbol_name.as_deref(),
                         meta_line.style.color(),
                         meta_line.style.is_intense(),
+                        meta_line.indent,
                     )?;
                     writeln!(self.stdout)?;
                 }
@@ -636,6 +649,7 @@ impl StreamingFormatter {
                         meta_line.symbol_name.as_deref(),
                         meta_line.style.color(),
                         meta_line.style.is_intense(),
+                        meta_line.indent,
                     )?;
                     writeln!(self.stdout)?;
                 }

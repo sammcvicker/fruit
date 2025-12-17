@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `-jN`: use N worker threads
   - Uses rayon for work-stealing parallelism
   - Output order preserved regardless of parallelism level
+- Indentation hierarchy preserved in type signature display (#25)
+  - Methods and nested items now display indented under their parent types
+  - Source indentation is preserved (tabs normalized to 4 spaces)
+  - Makes class/method relationships visible at a glance
 - `--types` / `-t` flag to show exported type signatures (#21)
   - Extracts public/exported APIs using regex patterns
   - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
