@@ -103,6 +103,11 @@ struct Args {
     /// Prefix for metadata lines (e.g., "# " or "// ")
     #[arg(short = 'p', long = "prefix")]
     prefix: Option<String>,
+
+    /// Number of parallel workers for metadata extraction
+    /// (0 = auto-detect, 1 = sequential, N = use N workers)
+    #[arg(short = 'j', long = "jobs", default_value = "0")]
+    jobs: usize,
 }
 
 /// Determine metadata order based on which flag appeared first in argv
@@ -148,6 +153,7 @@ fn main() {
         extract_comments: show_comments,
         extract_types: show_types,
         ignore_patterns: args.ignore.clone(),
+        parallel_workers: args.jobs,
     };
 
     let root = if args.path.is_absolute() {

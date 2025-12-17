@@ -349,6 +349,7 @@ dependencies = [
  "glob",
  "ignore",
  "predicates",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

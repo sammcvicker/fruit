@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use glob::Pattern;
+use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::comments::extract_first_comment;
@@ -70,6 +71,11 @@ pub struct WalkerConfig {
     pub extract_comments: bool,
     pub extract_types: bool,
     pub ignore_patterns: Vec<String>,
+    /// Number of parallel workers for metadata extraction.
+    /// 0 = auto-detect (use all available cores)
+    /// 1 = sequential (no parallelism)
+    /// N = use N worker threads
+    pub parallel_workers: usize,
 }
 
 pub struct TreeWalker {
@@ -239,8 +245,20 @@ fn glob_match(pattern: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Entry collected during tree traversal for parallel metadata extraction.
+#[derive(Debug)]
+struct CollectedEntry {
+    name: String,
+    path: PathBuf,
+    is_dir: bool,
+    is_last: bool,
+    prefix: String,
+    is_root: bool,
+}
+
 /// Streaming tree walker that outputs directly without building tree in memory.
 /// Uses O(depth) memory instead of O(files) for the tree structure.
+/// Supports parallel metadata extraction when parallel_workers != 1.
 pub struct StreamingWalker {
     config: WalkerConfig,
     filter: Option<FileFilter>,
@@ -290,6 +308,23 @@ impl StreamingWalker {
         root: &Path,
         output: &mut O,
     ) -> std::io::Result<Option<(usize, usize)>> {
+        // Use parallel extraction if workers != 1
+        let use_parallel = self.config.parallel_workers != 1
+            && (self.config.extract_comments || self.config.extract_types);
+
+        if use_parallel {
+            self.walk_streaming_parallel(root, output)
+        } else {
+            self.walk_streaming_sequential(root, output)
+        }
+    }
+
+    /// Sequential streaming walk - original implementation for -j1 or no metadata extraction.
+    fn walk_streaming_sequential<O: StreamingOutput>(
+        &self,
+        root: &Path,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
         match self.walk_dir_streaming(root, 0, "", true, output) {
             Ok(Some((d, f))) => {
                 output.finish(d, f)?;
@@ -298,6 +333,227 @@ impl StreamingWalker {
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// Parallel streaming walk - collects files first, extracts metadata in parallel.
+    fn walk_streaming_parallel<O: StreamingOutput>(
+        &self,
+        root: &Path,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
+        // Phase 1: Collect all entries in tree order
+        let mut entries = Vec::new();
+        if self
+            .collect_entries(root, 0, "", true, &mut entries)
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        // Phase 2: Extract metadata in parallel for all files
+        // Configure rayon thread pool if specific worker count requested
+        let file_indices: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| if !e.is_dir { Some(i) } else { None })
+            .collect();
+
+        // Extract metadata in parallel
+        // Note: We use a standalone function to avoid capturing &self (which contains
+        // non-Sync FileFilter/GitFilter) in the parallel closure.
+        let extract_comments = self.config.extract_comments;
+        let extract_types = self.config.extract_types;
+
+        let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
+            if self.config.parallel_workers == 0 {
+                // Auto-detect: use rayon's default thread pool
+                file_indices
+                    .par_iter()
+                    .map(|&i| {
+                        let path = &entries[i].path;
+                        let metadata =
+                            extract_metadata_from_path(path, extract_comments, extract_types);
+                        (i, metadata)
+                    })
+                    .collect()
+            } else {
+                // Use custom thread pool with specified worker count
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(self.config.parallel_workers)
+                    .build()
+                    .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
+
+                pool.install(|| {
+                    file_indices
+                        .par_iter()
+                        .map(|&i| {
+                            let path = &entries[i].path;
+                            let metadata =
+                                extract_metadata_from_path(path, extract_comments, extract_types);
+                            (i, metadata)
+                        })
+                        .collect()
+                })
+            };
+
+        // Build a map of index -> metadata for quick lookup
+        let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
+            metadata_results.into_iter().collect();
+
+        // Phase 3: Output entries in tree order
+        let mut dir_count = 0usize;
+        let mut file_count = 0usize;
+
+        for (i, entry) in entries.iter().enumerate() {
+            let metadata = if entry.is_dir {
+                None
+            } else {
+                metadata_map.remove(&i).flatten()
+            };
+
+            output.output_node(
+                &entry.name,
+                metadata,
+                entry.is_dir,
+                entry.is_last,
+                &entry.prefix,
+                entry.is_root,
+            )?;
+
+            if entry.is_dir && !entry.is_root {
+                dir_count += 1;
+            } else if !entry.is_dir {
+                file_count += 1;
+            }
+        }
+
+        output.finish(dir_count, file_count)?;
+        Ok(Some((dir_count, file_count)))
+    }
+
+    /// Collected entry for parallel processing.
+    fn collect_entries(
+        &self,
+        path: &Path,
+        depth: usize,
+        prefix: &str,
+        is_root: bool,
+        entries: &mut Vec<CollectedEntry>,
+    ) -> Option<()> {
+        // Skip symlinks to prevent infinite loops
+        if path.is_symlink() {
+            return None;
+        }
+
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
+
+        // Files are handled by their parent directory iteration
+        if path.is_file() || !path.is_dir() {
+            return None;
+        }
+
+        // Collect and sort directory entries
+        let dir_entries = match std::fs::read_dir(path) {
+            Ok(e) => e,
+            Err(_) => return None,
+        };
+
+        let mut dir_entries: Vec<_> = dir_entries.filter_map(|e| e.ok()).collect();
+        dir_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+        // Filter entries
+        let filtered_entries: Vec<_> = dir_entries
+            .into_iter()
+            .filter(|entry| {
+                let entry_path = entry.path();
+                !self.should_ignore(&entry_path)
+            })
+            .collect();
+
+        // Get directory name
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+
+        // Handle max depth
+        if at_max_depth && !is_root {
+            return Some(());
+        }
+
+        // Add root directory entry
+        if is_root {
+            entries.push(CollectedEntry {
+                name,
+                path: path.to_path_buf(),
+                is_dir: true,
+                is_last: true,
+                prefix: prefix.to_string(),
+                is_root: true,
+            });
+        }
+
+        // Build list of valid entries (files and non-empty directories)
+        let mut valid_entries: Vec<(std::fs::DirEntry, bool)> = Vec::new();
+
+        for entry in filtered_entries {
+            let entry_path = entry.path();
+
+            if entry_path.is_file() {
+                if self.config.dirs_only {
+                    continue;
+                }
+                if !self.should_include(&entry_path) {
+                    continue;
+                }
+                valid_entries.push((entry, false)); // false = is file
+            } else if entry_path.is_dir() && !entry_path.is_symlink() {
+                if self.config.dirs_only || self.has_included_files(&entry_path) {
+                    valid_entries.push((entry, true)); // true = is directory
+                }
+            }
+        }
+
+        let total = valid_entries.len();
+
+        for (i, (entry, is_dir)) in valid_entries.into_iter().enumerate() {
+            let entry_path = entry.path();
+            let entry_name = entry.file_name().to_string_lossy().to_string();
+            let is_last = i == total - 1;
+
+            let new_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            if is_dir {
+                // Add directory entry
+                entries.push(CollectedEntry {
+                    name: entry_name,
+                    path: entry_path.clone(),
+                    is_dir: true,
+                    is_last,
+                    prefix: prefix.to_string(),
+                    is_root: false,
+                });
+
+                // Recurse into directory
+                self.collect_entries(&entry_path, depth + 1, &new_prefix, false, entries);
+            } else {
+                // Add file entry
+                entries.push(CollectedEntry {
+                    name: entry_name,
+                    path: entry_path,
+                    is_dir: false,
+                    is_last,
+                    prefix: prefix.to_string(),
+                    is_root: false,
+                });
+            }
+        }
+
+        Some(())
     }
 
     fn walk_dir_streaming<O: StreamingOutput>(
@@ -482,6 +738,39 @@ impl StreamingWalker {
 
         if block.is_empty() { None } else { Some(block) }
     }
+}
+
+/// Extract metadata from a file path - standalone function for parallel execution.
+/// This is a free function to avoid capturing &StreamingWalker (which contains
+/// non-thread-safe FileFilter) in parallel closures.
+fn extract_metadata_from_path(
+    path: &Path,
+    extract_comments: bool,
+    extract_types: bool,
+) -> Option<MetadataBlock> {
+    let mut block = MetadataBlock::new();
+
+    // Extract comments
+    if extract_comments {
+        if let Some(comment) = extract_first_comment(path) {
+            block.comment_lines = comment
+                .lines()
+                .map(|line| MetadataLine::new(line.to_string()))
+                .collect();
+        }
+    }
+
+    // Extract type signatures
+    if extract_types {
+        if let Some(signatures) = extract_type_signatures(path) {
+            block.type_lines = signatures
+                .into_iter()
+                .map(|(sig, sym)| MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym))
+                .collect();
+        }
+    }
+
+    if block.is_empty() { None } else { Some(block) }
 }
 
 #[cfg(test)]

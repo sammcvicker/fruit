@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `-j/--jobs` flag for parallel metadata extraction (#22)
+  - `-j0` (default): auto-detect CPU count, use all available cores
+  - `-j1`: sequential mode (original behavior)
+  - `-jN`: use N worker threads
+  - Uses rayon for work-stealing parallelism
+  - Output order preserved regardless of parallelism level
 - `--types` / `-t` flag to show exported type signatures (#21)
   - Extracts public/exported APIs using regex patterns
   - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
