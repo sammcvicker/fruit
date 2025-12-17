@@ -135,6 +135,7 @@ impl TreeFormatter {
 
                 // Empty line is a separator
                 if content.is_empty() {
+                    stdout.reset()?;
                     writeln!(stdout, "{}", continuation_prefix)?;
                     continue;
                 }
@@ -506,6 +507,7 @@ impl StreamingFormatter {
 
                 // Empty line is a separator between sections
                 if content.is_empty() {
+                    self.stdout.reset()?;
                     writeln!(self.stdout, "{}", continuation_prefix)?;
                     continue;
                 }
@@ -560,6 +562,7 @@ impl StreamingFormatter {
 
                 // Empty line is a separator between sections
                 if content.is_empty() {
+                    self.stdout.reset()?;
                     writeln!(self.stdout, "{}", continuation_prefix)?;
                     continue;
                 }
