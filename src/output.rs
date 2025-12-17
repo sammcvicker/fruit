@@ -81,17 +81,18 @@ impl TreeFormatter {
                 output.push_str(name);
                 if let Some(c) = comment {
                     if self.config.show_full_comment {
-                        // Calculate padding for continuation lines
+                        // Full comment mode: display comments in a metadata block beneath filename
+                        output.push('\n'); // End the filename line
+
+                        // Continuation prefix for lines below the filename
                         let continuation_prefix = if is_last {
                             format!("{}    ", prefix)
                         } else {
                             format!("{}│   ", prefix)
                         };
-                        let padding_len = name.len() + 4; // "  # " align with text start
-                        let padding = " ".repeat(padding_len);
 
                         // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count() + padding_len;
+                        let prefix_width = continuation_prefix.chars().count();
                         let wrap_width = self
                             .config
                             .wrap_width
@@ -99,9 +100,12 @@ impl TreeFormatter {
                             .filter(|&w| w > 10);
 
                         let comment = c.trim();
-                        let has_multiple_lines = comment.contains('\n');
 
-                        let mut first_line_done = false;
+                        // Blank line before comment block
+                        output.push_str(&continuation_prefix);
+                        output.push('\n');
+
+                        // Comment lines
                         for line in comment.lines() {
                             let wrapped = if let Some(width) = wrap_width {
                                 wrap_text(line, width)
@@ -109,26 +113,16 @@ impl TreeFormatter {
                                 vec![line.to_string()]
                             };
 
-                            for (i, wrapped_line) in wrapped.iter().enumerate() {
-                                if !first_line_done && i == 0 {
-                                    output.push_str("  # ");
-                                    output.push_str(wrapped_line);
-                                    output.push('\n');
-                                    first_line_done = true;
-                                } else {
-                                    output.push_str(&continuation_prefix);
-                                    output.push_str(&padding);
-                                    output.push_str(wrapped_line);
-                                    output.push('\n');
-                                }
+                            for wrapped_line in wrapped.iter() {
+                                output.push_str(&continuation_prefix);
+                                output.push_str(wrapped_line);
+                                output.push('\n');
                             }
                         }
 
-                        // Add blank line after multiline comments
-                        if has_multiple_lines {
-                            output.push_str(&continuation_prefix);
-                            output.push('\n');
-                        }
+                        // Blank line after comment block
+                        output.push_str(&continuation_prefix);
+                        output.push('\n');
                     } else {
                         output.push_str("  # ");
                         output.push_str(first_line(c));
@@ -195,33 +189,37 @@ impl TreeFormatter {
                 stdout.reset()?;
 
                 if let Some(c) = comment {
-                    stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(Color::Black))
-                            .set_intense(true),
-                    )?;
                     if self.config.show_full_comment {
-                        // Calculate padding for continuation lines
+                        // Full comment mode: display comments in a metadata block beneath filename
+                        writeln!(stdout)?; // End the filename line
+
+                        // Continuation prefix for lines below the filename
                         let continuation_prefix = if is_last {
                             format!("{}    ", prefix)
                         } else {
                             format!("{}│   ", prefix)
                         };
-                        let padding_len = name.len() + 4; // "  # " align with text start
-                        let padding = " ".repeat(padding_len);
 
                         // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count() + padding_len;
+                        let prefix_width = continuation_prefix.chars().count();
                         let wrap_width = self
                             .config
                             .wrap_width
                             .map(|w| w.saturating_sub(prefix_width))
-                            .filter(|&w| w > 10); // Don't wrap if too narrow
+                            .filter(|&w| w > 10);
 
                         let comment = c.trim();
-                        let has_multiple_lines = comment.contains('\n');
 
-                        let mut first_line_done = false;
+                        // Blank line before comment block
+                        stdout.reset()?;
+                        writeln!(stdout, "{}", continuation_prefix)?;
+
+                        // Comment lines
+                        stdout.set_color(
+                            ColorSpec::new()
+                                .set_fg(Some(Color::Black))
+                                .set_intense(true),
+                        )?;
                         for line in comment.lines() {
                             let wrapped = if let Some(width) = wrap_width {
                                 wrap_text(line, width)
@@ -229,29 +227,27 @@ impl TreeFormatter {
                                 vec![line.to_string()]
                             };
 
-                            for (i, wrapped_line) in wrapped.iter().enumerate() {
-                                if !first_line_done && i == 0 {
-                                    writeln!(stdout, "  # {}", wrapped_line)?;
-                                    first_line_done = true;
-                                } else {
-                                    stdout.reset()?;
-                                    write!(stdout, "{}", continuation_prefix)?;
-                                    stdout.set_color(
-                                        ColorSpec::new()
-                                            .set_fg(Some(Color::Black))
-                                            .set_intense(true),
-                                    )?;
-                                    writeln!(stdout, "{}{}", padding, wrapped_line)?;
-                                }
+                            for wrapped_line in wrapped.iter() {
+                                stdout.reset()?;
+                                write!(stdout, "{}", continuation_prefix)?;
+                                stdout.set_color(
+                                    ColorSpec::new()
+                                        .set_fg(Some(Color::Black))
+                                        .set_intense(true),
+                                )?;
+                                writeln!(stdout, "{}", wrapped_line)?;
                             }
                         }
 
-                        // Add blank line after multiline comments for readability
-                        if has_multiple_lines {
-                            stdout.reset()?;
-                            writeln!(stdout, "{}", continuation_prefix)?;
-                        }
+                        // Blank line after comment block
+                        stdout.reset()?;
+                        writeln!(stdout, "{}", continuation_prefix)?;
                     } else {
+                        stdout.set_color(
+                            ColorSpec::new()
+                                .set_fg(Some(Color::Black))
+                                .set_intense(true),
+                        )?;
                         writeln!(stdout, "  # {}", first_line(c))?;
                     }
                     stdout.reset()?;
@@ -360,23 +356,19 @@ impl StreamingOutput for StreamingFormatter {
             self.stdout.reset()?;
 
             if let Some(c) = comment {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(Color::Black))
-                        .set_intense(true),
-                )?;
                 if self.config.show_full_comment {
-                    // Calculate padding for continuation lines
+                    // Full comment mode: display comments in a metadata block beneath filename
+                    writeln!(self.stdout)?; // End the filename line
+
+                    // Continuation prefix for lines below the filename
                     let continuation_prefix = if is_last {
                         format!("{}    ", prefix)
                     } else {
                         format!("{}│   ", prefix)
                     };
-                    let padding_len = name.len() + 4; // "  # " align with text start
-                    let padding = " ".repeat(padding_len);
 
                     // Calculate available width for text wrapping
-                    let prefix_width = continuation_prefix.chars().count() + padding_len;
+                    let prefix_width = continuation_prefix.chars().count();
                     let wrap_width = self
                         .config
                         .wrap_width
@@ -384,9 +376,17 @@ impl StreamingOutput for StreamingFormatter {
                         .filter(|&w| w > 10);
 
                     let comment = c.trim();
-                    let has_multiple_lines = comment.contains('\n');
 
-                    let mut first_line_done = false;
+                    // Blank line before comment block
+                    self.stdout.reset()?;
+                    writeln!(self.stdout, "{}", continuation_prefix)?;
+
+                    // Comment lines
+                    self.stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(Color::Black))
+                            .set_intense(true),
+                    )?;
                     for line in comment.lines() {
                         let wrapped = if let Some(width) = wrap_width {
                             wrap_text(line, width)
@@ -394,29 +394,27 @@ impl StreamingOutput for StreamingFormatter {
                             vec![line.to_string()]
                         };
 
-                        for (i, wrapped_line) in wrapped.iter().enumerate() {
-                            if !first_line_done && i == 0 {
-                                writeln!(self.stdout, "  # {}", wrapped_line)?;
-                                first_line_done = true;
-                            } else {
-                                self.stdout.reset()?;
-                                write!(self.stdout, "{}", continuation_prefix)?;
-                                self.stdout.set_color(
-                                    ColorSpec::new()
-                                        .set_fg(Some(Color::Black))
-                                        .set_intense(true),
-                                )?;
-                                writeln!(self.stdout, "{}{}", padding, wrapped_line)?;
-                            }
+                        for wrapped_line in wrapped.iter() {
+                            self.stdout.reset()?;
+                            write!(self.stdout, "{}", continuation_prefix)?;
+                            self.stdout.set_color(
+                                ColorSpec::new()
+                                    .set_fg(Some(Color::Black))
+                                    .set_intense(true),
+                            )?;
+                            writeln!(self.stdout, "{}", wrapped_line)?;
                         }
                     }
 
-                    // Add blank line after multiline comments for readability
-                    if has_multiple_lines {
-                        self.stdout.reset()?;
-                        writeln!(self.stdout, "{}", continuation_prefix)?;
-                    }
+                    // Blank line after comment block
+                    self.stdout.reset()?;
+                    writeln!(self.stdout, "{}", continuation_prefix)?;
                 } else {
+                    self.stdout.set_color(
+                        ColorSpec::new()
+                            .set_fg(Some(Color::Black))
+                            .set_intense(true),
+                    )?;
                     writeln!(self.stdout, "  # {}", first_line(c))?;
                 }
                 self.stdout.reset()?;

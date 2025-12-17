@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Redesigned full comment display (`-f`) to use metadata block pattern (#18)
+  - Comments now appear on separate lines beneath the filename
+  - Each comment line has its own `#` prefix for clarity
+  - Multi-line comments get a visual buffer line for separation
+  - Default mode (inline first-line) unchanged
+
 ## [0.2.0] - 2025-12-15
 
 ### Changed
