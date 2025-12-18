@@ -1,10 +1,65 @@
 //! Source file comment extraction
+//!
+//! This module extracts the first documentation comment from source files.
+//! It supports multiple programming languages and handles language-specific
+//! conventions like magic comments, shebangs, and documentation annotations.
+//!
+//! # Design Philosophy
+//!
+//! The extraction aims to find the most meaningful "file-level" documentation:
+//! - For modules/packages: The comment describing the entire file's purpose
+//! - For scripts: The header comment explaining what the script does
+//!
+//! # Language-Specific Behavior
+//!
+//! Each language has its own conventions for file-level documentation:
+//!
+//! - **Rust**: Prioritizes `//!` module docs, then `///` item docs, then `/* */` blocks
+//! - **Python**: Extracts module docstrings (skips shebang and encoding declarations)
+//! - **JavaScript/TypeScript**: JSDoc `/** */` comments, then `//` line comments
+//! - **Go**: Package comments before `package` declaration
+//! - **C/C++**: Block `/* */` comments, then `//` line comments at file start
+//! - **Ruby**: `#` comments (skips `frozen_string_literal` and encoding magic comments)
+//! - **Shell**: `#` comments after shebang
+//! - **Java/Kotlin/Swift**: JavaDoc `/** */` comments (filters `@` annotations)
+//! - **PHP**: PHPDoc `/** */` after `<?php` tag, or `//` and `#` comments
+//! - **C#**: XML doc `///` comments (skips `<tag>` elements), then `/* */` blocks
 
 use std::path::Path;
 
-/// Maximum file size for comment extraction (1MB)
+/// Maximum file size for comment extraction (1MB).
+/// Files larger than this are skipped to prevent excessive memory usage.
 const MAX_FILE_SIZE: u64 = 1_000_000;
 
+/// Extract the first documentation comment from a source file.
+///
+/// This function reads the file at the given path and extracts what it considers
+/// to be the primary documentation comment based on the file's extension.
+///
+/// # Supported Extensions
+///
+/// | Extension | Language | Comment Style |
+/// |-----------|----------|---------------|
+/// | `.rs` | Rust | `//!`, `///`, `/* */` |
+/// | `.py` | Python | `"""..."""` docstrings |
+/// | `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs` | JavaScript/TypeScript | `/** */`, `//` |
+/// | `.go` | Go | `//`, `/* */` before package |
+/// | `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.cxx` | C/C++ | `/* */`, `//` |
+/// | `.rb` | Ruby | `#` comments |
+/// | `.sh`, `.bash`, `.zsh` | Shell | `#` comments |
+/// | `.java`, `.kt`, `.kts`, `.swift` | Java/Kotlin/Swift | `/** */` |
+/// | `.php` | PHP | `/** */`, `//`, `#` |
+/// | `.cs` | C# | `///`, `/* */` |
+///
+/// # Returns
+///
+/// - `Some(String)` - The extracted comment text with comment markers removed
+/// - `None` - If no comment found, unsupported extension, file unreadable, or file > 1MB
+///
+/// # File Size Limit
+///
+/// Files larger than 1MB ([`MAX_FILE_SIZE`]) are skipped to prevent memory issues
+/// when processing large generated or binary files with code extensions.
 pub fn extract_first_comment(path: &Path) -> Option<String> {
     // Skip files that are too large to avoid OOM on large files
     if let Ok(metadata) = path.metadata() {
@@ -34,6 +89,12 @@ pub fn extract_first_comment(path: &Path) -> Option<String> {
     }
 }
 
+/// Extract Rust documentation comments.
+///
+/// Priority order:
+/// 1. `//!` - Inner doc comments (module-level documentation)
+/// 2. `///` - Outer doc comments (item documentation, skips `#[...]` attributes)
+/// 3. `/* */` - Block comments at file start
 fn extract_rust_comment(content: &str) -> Option<String> {
     let lines: Vec<&str> = content.lines().collect();
 
@@ -93,6 +154,14 @@ fn extract_rust_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract Python module docstrings.
+///
+/// Skips:
+/// - Shebang lines (`#!/usr/bin/env python`)
+/// - Encoding declarations (`# -*- coding: utf-8 -*-`)
+/// - Empty lines before the docstring
+///
+/// Supports both `"""..."""` and `'''...'''` quote styles.
 fn extract_python_docstring(content: &str) -> Option<String> {
     let trimmed = content.trim_start();
 
@@ -128,6 +197,11 @@ fn extract_python_docstring(content: &str) -> Option<String> {
     None
 }
 
+/// Extract JavaScript/TypeScript comments.
+///
+/// Priority order:
+/// 1. JSDoc `/** ... */` block comments
+/// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_js_comment(content: &str) -> Option<String> {
     let trimmed = content.trim_start();
 
@@ -166,6 +240,11 @@ fn extract_js_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract Go package comments.
+///
+/// Go convention: Package documentation comes immediately before the `package` declaration.
+/// Supports both `//` line comments and `/* */` block comments.
+/// Non-empty lines between comments and `package` reset the comment buffer.
 fn extract_go_comment(content: &str) -> Option<String> {
     // Go package comments come before the package declaration
     let mut comment_lines: Vec<&str> = Vec::new();
@@ -203,6 +282,11 @@ fn extract_go_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract C/C++ comments.
+///
+/// Priority order:
+/// 1. `/* */` block comments at file start
+/// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_c_comment(content: &str) -> Option<String> {
     let trimmed = content.trim_start();
 
@@ -241,6 +325,14 @@ fn extract_c_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract Ruby comments.
+///
+/// Skips Ruby magic comments:
+/// - Shebang (`#!/usr/bin/env ruby`)
+/// - `# frozen_string_literal: true`
+/// - `# encoding: utf-8` / `# coding: utf-8`
+///
+/// Stops collecting at the first empty line after comments start.
 fn extract_ruby_comment(content: &str) -> Option<String> {
     let mut comment_lines = Vec::new();
     let mut past_preamble = false;
@@ -251,7 +343,7 @@ fn extract_ruby_comment(content: &str) -> Option<String> {
         if trimmed.starts_with("#!") {
             continue;
         }
-        // Skip encoding/frozen string comments
+        // Skip encoding/frozen string magic comments
         if trimmed.starts_with("# frozen_string_literal")
             || trimmed.starts_with("# encoding:")
             || trimmed.starts_with("# coding:")
@@ -278,6 +370,11 @@ fn extract_ruby_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract shell script comments (bash, sh, zsh).
+///
+/// Skips the shebang line (`#!/bin/bash`, etc.) and collects
+/// subsequent `#` comments. Stops at the first empty line after
+/// comments start.
 fn extract_shell_comment(content: &str) -> Option<String> {
     let mut comment_lines = Vec::new();
     let mut past_shebang = false;
@@ -308,6 +405,14 @@ fn extract_shell_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract JavaDoc-style comments (Java, Kotlin, Swift).
+///
+/// Priority order:
+/// 1. `/** ... */` doc comments (filters out `@param`, `@return`, etc.)
+/// 2. `//` line comments at file start
+///
+/// Note: Lines starting with `@` are filtered as they typically contain
+/// annotation metadata rather than documentation prose.
 fn extract_javadoc_comment(content: &str) -> Option<String> {
     let trimmed = content.trim_start();
 
@@ -318,6 +423,7 @@ fn extract_javadoc_comment(content: &str) -> Option<String> {
             let cleaned: Vec<&str> = block
                 .lines()
                 .map(|l| l.trim().trim_start_matches('*').trim())
+                // Filter out @-annotations like @param, @return, @author
                 .filter(|l| !l.is_empty() && !l.starts_with('@'))
                 .collect();
             if !cleaned.is_empty() {
@@ -346,8 +452,18 @@ fn extract_javadoc_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract PHP comments.
+///
+/// Handles PHP opening tags:
+/// - `<?php` (full tag)
+/// - `<?` (short tag)
+///
+/// Priority order:
+/// 1. PHPDoc `/** ... */` comments (filters `@` annotations)
+/// 2. `//` line comments
+/// 3. `#` line comments (but not PHP 8 attributes like `#[Attribute]`)
 fn extract_php_comment(content: &str) -> Option<String> {
-    // Skip <?php tag
+    // Skip <?php or <? opening tag
     let content = content.trim_start();
     let content = if let Some(stripped) = content.strip_prefix("<?php") {
         stripped
@@ -365,6 +481,7 @@ fn extract_php_comment(content: &str) -> Option<String> {
             let cleaned: Vec<&str> = block
                 .lines()
                 .map(|l| l.trim().trim_start_matches('*').trim())
+                // Filter out @-annotations like @param, @return
                 .filter(|l| !l.is_empty() && !l.starts_with('@'))
                 .collect();
             if !cleaned.is_empty() {
@@ -396,6 +513,14 @@ fn extract_php_comment(content: &str) -> Option<String> {
     None
 }
 
+/// Extract C# comments.
+///
+/// Priority order:
+/// 1. `///` XML documentation comments (filters `<tag>` elements)
+/// 2. `//` regular line comments
+/// 3. `/* */` block comments
+///
+/// Skips `using` statements and `[Attribute]` lines when looking for comments.
 fn extract_csharp_comment(content: &str) -> Option<String> {
     let trimmed = content.trim_start();
 
