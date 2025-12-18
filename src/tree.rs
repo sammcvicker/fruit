@@ -32,6 +32,53 @@ impl FileFilter {
     }
 }
 
+// ============================================================================
+// Shared filtering functions used by both TreeWalker and StreamingWalker
+// ============================================================================
+
+/// Check if a directory has any included files (used for pruning empty directories).
+fn has_included_files(path: &Path, filter: &Option<FileFilter>) -> bool {
+    if let Some(f) = filter {
+        f.is_included(path)
+    } else {
+        // Without filter, assume directory has content
+        true
+    }
+}
+
+/// Check if a path should be included based on filter and show_all flag.
+fn should_include_path(path: &Path, config: &WalkerConfig, filter: &Option<FileFilter>) -> bool {
+    if config.show_all {
+        return true;
+    }
+    if let Some(f) = filter {
+        return f.is_included(path);
+    }
+    true
+}
+
+/// Check if a path should be ignored based on name and ignore patterns.
+fn should_ignore_path(path: &Path, ignore_patterns: &[String]) -> bool {
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Always ignore .git directory
+    if name == ".git" {
+        return true;
+    }
+
+    // Check custom ignore patterns
+    for pattern in ignore_patterns {
+        if name == *pattern || glob_match(pattern, &name) {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// TreeNode for JSON output - still builds full tree in memory.
 /// For large repos, use StreamingWalker instead for console output.
 #[derive(Debug, Clone, Serialize)]
@@ -129,7 +176,7 @@ impl TreeWalker {
             if self.config.dirs_only {
                 return None;
             }
-            if !self.should_include(path) {
+            if !should_include_path(path, &self.config, &self.filter) {
                 return None;
             }
             let comment = if self.config.extract_comments {
@@ -176,7 +223,7 @@ impl TreeWalker {
         for entry in entries {
             let entry_path = entry.path();
 
-            if self.should_ignore(&entry_path) {
+            if should_ignore_path(&entry_path, &self.config.ignore_patterns) {
                 continue;
             }
 
@@ -191,7 +238,7 @@ impl TreeWalker {
                     // Otherwise, skip truly empty directories (those with no tracked files)
                     if c.is_empty()
                         && !self.config.dirs_only
-                        && !self.has_included_files(&entry_path)
+                        && !has_included_files(&entry_path, &self.filter)
                     {
                         continue;
                     }
@@ -205,46 +252,6 @@ impl TreeWalker {
             path: path.to_path_buf(),
             children,
         })
-    }
-
-    fn has_included_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.filter {
-            filter.is_included(path)
-        } else {
-            // Without filter, assume directory has content
-            true
-        }
-    }
-
-    fn should_include(&self, path: &Path) -> bool {
-        if self.config.show_all {
-            return true;
-        }
-        if let Some(ref filter) = self.filter {
-            return filter.is_included(path);
-        }
-        true
-    }
-
-    fn should_ignore(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Always ignore .git directory
-        if name == ".git" {
-            return true;
-        }
-
-        // Check custom ignore patterns
-        for pattern in &self.config.ignore_patterns {
-            if name == *pattern || glob_match(pattern, &name) {
-                return true;
-            }
-        }
-
-        false
     }
 }
 
@@ -488,7 +495,7 @@ impl StreamingWalker {
             .into_iter()
             .filter(|entry| {
                 let entry_path = entry.path();
-                !self.should_ignore(&entry_path)
+                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
             })
             .collect();
 
@@ -525,13 +532,13 @@ impl StreamingWalker {
                 if self.config.dirs_only {
                     continue;
                 }
-                if !self.should_include(&entry_path) {
+                if !should_include_path(&entry_path, &self.config, &self.filter) {
                     continue;
                 }
                 valid_entries.push((entry, false)); // false = is file
             } else if entry_path.is_dir()
                 && !entry_path.is_symlink()
-                && (self.config.dirs_only || self.has_included_files(&entry_path))
+                && (self.config.dirs_only || has_included_files(&entry_path, &self.filter))
             {
                 valid_entries.push((entry, true)); // true = is directory
             }
@@ -613,7 +620,7 @@ impl StreamingWalker {
             .into_iter()
             .filter(|entry| {
                 let entry_path = entry.path();
-                !self.should_ignore(&entry_path)
+                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
             })
             .collect();
 
@@ -647,14 +654,14 @@ impl StreamingWalker {
                 if self.config.dirs_only {
                     continue;
                 }
-                if !self.should_include(&entry_path) {
+                if !should_include_path(&entry_path, &self.config, &self.filter) {
                     continue;
                 }
                 let metadata = self.extract_metadata(&entry_path);
                 valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
-                if self.config.dirs_only || self.has_included_files(&entry_path) {
+                if self.config.dirs_only || has_included_files(&entry_path, &self.filter) {
                     valid_entries.push((entry, true, None));
                 }
             }
@@ -693,46 +700,6 @@ impl StreamingWalker {
         }
 
         Ok(Some((dir_count, file_count)))
-    }
-
-    fn has_included_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.filter {
-            filter.is_included(path)
-        } else {
-            // Without filter, assume directory has content
-            true
-        }
-    }
-
-    fn should_include(&self, path: &Path) -> bool {
-        if self.config.show_all {
-            return true;
-        }
-        if let Some(ref filter) = self.filter {
-            return filter.is_included(path);
-        }
-        true
-    }
-
-    fn should_ignore(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Always ignore .git directory
-        if name == ".git" {
-            return true;
-        }
-
-        // Check custom ignore patterns
-        for pattern in &self.config.ignore_patterns {
-            if name == *pattern || glob_match(pattern, &name) {
-                return true;
-            }
-        }
-
-        false
     }
 
     /// Extract metadata (comments and/or type signatures) from a file.
