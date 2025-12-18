@@ -875,4 +875,260 @@ mod tests {
         let wrapped = wrap_text(mixed, 8);
         assert_eq!(wrapped, vec!["Hello 世界", "🎉"]);
     }
+
+    // ==================== Metadata Block Display Tests ====================
+
+    #[test]
+    fn test_metadata_block_inline_display_single_line() {
+        // When not in full mode, only the first line should show inline
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("Single line comment".to_string()),
+            types: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false), // full = false
+            wrap_width: None,
+        });
+
+        // Wrap in a directory so format_node runs properly
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have comment inline on same line as filename
+        assert!(
+            output.contains("test.rs  Single line comment"),
+            "Expected inline metadata, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_inline_display_multiline_comment_first_only() {
+        // When not in full mode, multiline comments should only show first line
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("First line\nSecond line\nThird line".to_string()),
+            types: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false), // full = false
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should only have first line inline
+        assert!(
+            output.contains("test.rs  First line"),
+            "Expected first line inline, got: {}",
+            output
+        );
+        // Should NOT contain other lines
+        assert!(
+            !output.contains("Second line"),
+            "Should not contain second line, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_multiline_display() {
+        // When in full mode, all lines should appear in block format
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("First line\nSecond line\nThird line".to_string()),
+            types: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(true), // full = true
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have all lines in output
+        assert!(
+            output.contains("First line"),
+            "Expected first line, got: {}",
+            output
+        );
+        assert!(
+            output.contains("Second line"),
+            "Expected second line, got: {}",
+            output
+        );
+        assert!(
+            output.contains("Third line"),
+            "Expected third line, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_with_custom_prefix() {
+        // Test that custom prefix is applied to metadata lines
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("Comment text".to_string()),
+            types: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false).with_prefix("# "),
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have prefix before comment
+        assert!(
+            output.contains("# Comment text"),
+            "Expected prefix '# ' before comment, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_empty_displays_no_extra_content() {
+        // When comment is None, no metadata should appear
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: None,
+            types: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(true),
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Line should just be the filename
+        let lines: Vec<&str> = output.lines().collect();
+        // Find the line with test.rs
+        let test_line = lines.iter().find(|l| l.contains("test.rs")).unwrap();
+        // Should end with "test.rs" (possibly with tree connector)
+        assert!(
+            test_line.trim().ends_with("test.rs"),
+            "Expected line to end with just filename, got: {}",
+            test_line
+        );
+    }
+
+    // ==================== Helper Function Tests ====================
+
+    #[test]
+    fn test_continuation_prefix_last_item() {
+        let prefix = continuation_prefix("", true);
+        assert_eq!(prefix, "    "); // 4 spaces for last item
+
+        let prefix = continuation_prefix("│   ", true);
+        assert_eq!(prefix, "│       "); // parent prefix + 4 spaces
+    }
+
+    #[test]
+    fn test_continuation_prefix_not_last_item() {
+        let prefix = continuation_prefix("", false);
+        assert_eq!(prefix, "│   "); // vertical line + 3 spaces
+
+        let prefix = continuation_prefix("│   ", false);
+        assert_eq!(prefix, "│   │   "); // parent prefix + vertical + 3 spaces
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_enabled() {
+        // With base width of 100, should subtract prefixes
+        let width = calculate_wrap_width(Some(100), 4, 2);
+        assert_eq!(width, Some(94)); // 100 - 4 - 2 = 94
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_disabled() {
+        // When wrap_width is None, should return None
+        let width = calculate_wrap_width(None, 4, 2);
+        assert!(width.is_none());
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_too_small() {
+        // When resulting width is <= 10, should return None
+        let width = calculate_wrap_width(Some(15), 10, 4);
+        assert!(width.is_none()); // 15 - 10 - 4 = 1, which is <= 10
+    }
+
+    #[test]
+    fn test_first_line_extracts_first() {
+        assert_eq!(first_line("first\nsecond\nthird"), "first");
+        assert_eq!(first_line("only one"), "only one");
+        assert_eq!(first_line(""), "");
+    }
+
+    #[test]
+    fn test_wrap_text_empty() {
+        let wrapped = wrap_text("", 50);
+        assert_eq!(wrapped, vec![""]);
+    }
+
+    #[test]
+    fn test_wrap_text_zero_width() {
+        // Zero width should return original text
+        let wrapped = wrap_text("some text", 0);
+        assert_eq!(wrapped, vec!["some text"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long_word() {
+        // Word longer than max_width should be character-wrapped
+        let wrapped = wrap_text("supercalifragilisticexpialidocious", 10);
+        assert_eq!(wrapped.len(), 4);
+        assert_eq!(wrapped[0], "supercalif");
+        assert_eq!(wrapped[1], "ragilistic");
+        assert_eq!(wrapped[2], "expialidoc");
+        assert_eq!(wrapped[3], "ious");
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_word_boundaries() {
+        let wrapped = wrap_text("hello world foo bar", 11);
+        assert_eq!(wrapped, vec!["hello world", "foo bar"]);
+    }
 }
