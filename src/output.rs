@@ -1229,7 +1229,10 @@ mod tests {
         // Line should just be the filename
         let lines: Vec<&str> = output.lines().collect();
         // Find the line with test.rs
-        let test_line = lines.iter().find(|l| l.contains("test.rs")).unwrap();
+        let test_line = lines
+            .iter()
+            .find(|l| l.contains("test.rs"))
+            .expect("Expected output to contain a line with 'test.rs'");
         // Should end with "test.rs" (possibly with tree connector)
         assert!(
             test_line.trim().ends_with("test.rs"),
