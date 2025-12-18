@@ -23,6 +23,8 @@ pub enum LineStyle {
     Docstring,
     /// TODO/FIXME marker display
     Todo,
+    /// Import/dependency display
+    Import,
 }
 
 impl LineStyle {
@@ -35,6 +37,7 @@ impl LineStyle {
             LineStyle::MethodName => Color::Green,
             LineStyle::Docstring => Color::Black,
             LineStyle::Todo => Color::Yellow,
+            LineStyle::Import => Color::Magenta,
         }
     }
 
@@ -103,6 +106,8 @@ pub struct MetadataBlock {
     pub type_lines: Vec<MetadataLine>,
     /// TODO/FIXME marker lines
     pub todo_lines: Vec<MetadataLine>,
+    /// Import/dependency lines
+    pub import_lines: Vec<MetadataLine>,
 }
 
 impl MetadataBlock {
@@ -121,6 +126,7 @@ impl MetadataBlock {
             comment_lines,
             type_lines: Vec::new(),
             todo_lines: Vec::new(),
+            import_lines: Vec::new(),
         }
     }
 
@@ -136,6 +142,7 @@ impl MetadataBlock {
             comment_lines: Vec::new(),
             type_lines,
             todo_lines: Vec::new(),
+            import_lines: Vec::new(),
         }
     }
 
@@ -152,12 +159,16 @@ impl MetadataBlock {
             comment_lines: Vec::new(),
             type_lines: Vec::new(),
             todo_lines,
+            import_lines: Vec::new(),
         }
     }
 
     /// Check if this block has any content.
     pub fn is_empty(&self) -> bool {
-        self.comment_lines.is_empty() && self.type_lines.is_empty() && self.todo_lines.is_empty()
+        self.comment_lines.is_empty()
+            && self.type_lines.is_empty()
+            && self.todo_lines.is_empty()
+            && self.import_lines.is_empty()
     }
 
     /// Check if only comments are present (no types or todos).
@@ -180,8 +191,13 @@ impl MetadataBlock {
         !self.todo_lines.is_empty()
     }
 
+    /// Check if imports are present.
+    pub fn has_imports(&self) -> bool {
+        !self.import_lines.is_empty()
+    }
+
     /// Get lines in the specified order, with an empty line between groups if both exist.
-    /// TODOs are always shown last.
+    /// Order: comments/types (per order), then imports, then TODOs.
     pub fn lines_in_order(&self, order: MetadataOrder) -> Vec<MetadataLine> {
         let mut result = Vec::new();
 
@@ -198,6 +214,12 @@ impl MetadataBlock {
         }
 
         result.extend(second.iter().cloned());
+
+        // Add imports with separator
+        if !self.import_lines.is_empty() && !result.is_empty() {
+            result.push(MetadataLine::new(String::new())); // empty line separator
+        }
+        result.extend(self.import_lines.iter().cloned());
 
         // Add TODOs at the end with separator
         if !self.todo_lines.is_empty() && !result.is_empty() {
