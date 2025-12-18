@@ -27,9 +27,7 @@
 
 use std::path::Path;
 
-/// Maximum file size for comment extraction (1MB).
-/// Files larger than this are skipped to prevent excessive memory usage.
-const MAX_FILE_SIZE: u64 = 1_000_000;
+use crate::file_utils::read_source_file;
 
 /// Extract the first documentation comment from a source file.
 ///
@@ -58,18 +56,10 @@ const MAX_FILE_SIZE: u64 = 1_000_000;
 ///
 /// # File Size Limit
 ///
-/// Files larger than 1MB ([`MAX_FILE_SIZE`]) are skipped to prevent memory issues
+/// Files larger than 1MB are skipped to prevent memory issues
 /// when processing large generated or binary files with code extensions.
 pub fn extract_first_comment(path: &Path) -> Option<String> {
-    // Skip files that are too large to avoid OOM on large files
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
-
-    let extension = path.extension()?.to_str()?;
-    let content = std::fs::read_to_string(path).ok()?;
+    let (content, extension) = read_source_file(path)?;
 
     match extension {
         "rs" => extract_rust_comment(&content),
@@ -713,5 +703,120 @@ public class Program {}
             extract_csharp_comment(content),
             Some("Main program entry point".to_string())
         );
+    }
+
+    // Edge case tests for issue #61
+
+    #[test]
+    fn test_rust_multiline_module_doc() {
+        let content =
+            "//! Module documentation\n//! that spans\n//! multiple lines\n\nfn main() {}";
+        assert_eq!(
+            extract_rust_comment(content),
+            Some("Module documentation\nthat spans\nmultiple lines".to_string())
+        );
+    }
+
+    #[test]
+    fn test_rust_empty_doc_comment() {
+        let content = "//!\nfn main() {}";
+        // Empty doc comment should return None (no non-empty content)
+        assert_eq!(extract_rust_comment(content), None);
+    }
+
+    #[test]
+    fn test_rust_block_comment_with_asterisks() {
+        let content = "/**\n * Decorated block\n * comment style\n */\nfn main() {}";
+        assert_eq!(
+            extract_rust_comment(content),
+            Some("Decorated block\ncomment style".to_string())
+        );
+    }
+
+    #[test]
+    fn test_python_single_quote_docstring() {
+        let content = "'''Single quote docstring.'''\ndef foo(): pass";
+        assert_eq!(
+            extract_python_docstring(content),
+            Some("Single quote docstring.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_python_docstring_with_shebang() {
+        let content =
+            "#!/usr/bin/env python3\n# coding: utf-8\n\"\"\"Module with shebang.\"\"\"\nimport os";
+        assert_eq!(
+            extract_python_docstring(content),
+            Some("Module with shebang.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_go_block_comment() {
+        let content = "/* Package main provides\nmultiline doc */\npackage main";
+        assert_eq!(
+            extract_go_comment(content),
+            Some("Package main provides\nmultiline doc".to_string())
+        );
+    }
+
+    #[test]
+    fn test_go_comment_interrupted_by_code() {
+        // Comments before code that's not 'package' should be discarded
+        let content = "// Comment 1\nimport \"fmt\"\n// Comment 2\npackage main";
+        // Should get Comment 2, not Comment 1
+        assert_eq!(extract_go_comment(content), Some("Comment 2".to_string()));
+    }
+
+    #[test]
+    fn test_shell_multiple_comment_lines() {
+        let content = "#!/bin/bash\n# First line\n# Second line\necho hello";
+        assert_eq!(
+            extract_shell_comment(content),
+            Some("First line\nSecond line".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ruby_multiple_magic_comments() {
+        let content =
+            "# encoding: utf-8\n# frozen_string_literal: true\n# Real comment\nclass Foo; end";
+        assert_eq!(
+            extract_ruby_comment(content),
+            Some("Real comment".to_string())
+        );
+    }
+
+    #[test]
+    fn test_c_multiline_block() {
+        let content = "/*\n * File: main.c\n * Author: Test\n */\nint main() {}";
+        assert_eq!(
+            extract_c_comment(content),
+            Some("File: main.c\nAuthor: Test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_js_multiline_jsdoc() {
+        let content =
+            "/**\n * @file Main application\n * @description Entry point\n */\nfunction main() {}";
+        // @-lines should not be filtered in JS (only in Java)
+        assert!(extract_js_comment(content).is_some());
+    }
+
+    #[test]
+    fn test_empty_file() {
+        assert_eq!(extract_rust_comment(""), None);
+        assert_eq!(extract_python_docstring(""), None);
+        assert_eq!(extract_js_comment(""), None);
+        assert_eq!(extract_go_comment(""), None);
+    }
+
+    #[test]
+    fn test_file_with_only_code() {
+        assert_eq!(extract_rust_comment("fn main() {}"), None);
+        assert_eq!(extract_python_docstring("def foo(): pass"), None);
+        assert_eq!(extract_js_comment("function foo() {}"), None);
     }
 }

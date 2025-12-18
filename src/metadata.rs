@@ -13,14 +13,8 @@ pub enum LineStyle {
     /// Standard comment display (dim gray)
     #[default]
     Comment,
-    /// Type signature display (for future use)
+    /// Type signature display
     TypeSignature,
-    /// Class/struct name display (for future use)
-    ClassName,
-    /// Method/function name display (for future use)
-    MethodName,
-    /// Docstring display (for future use)
-    Docstring,
     /// TODO/FIXME marker display
     Todo,
     /// Import/dependency display
@@ -33,9 +27,6 @@ impl LineStyle {
         match self {
             LineStyle::Comment => Color::Black,
             LineStyle::TypeSignature => Color::Cyan,
-            LineStyle::ClassName => Color::Yellow,
-            LineStyle::MethodName => Color::Green,
-            LineStyle::Docstring => Color::Black,
             LineStyle::Todo => Color::Yellow,
             LineStyle::Import => Color::Magenta,
         }
@@ -43,7 +34,7 @@ impl LineStyle {
 
     /// Whether this style should use intense/bright colors.
     pub fn is_intense(&self) -> bool {
-        matches!(self, LineStyle::Comment | LineStyle::Docstring)
+        matches!(self, LineStyle::Comment)
     }
 }
 
@@ -270,7 +261,10 @@ impl MetadataBlock {
 
     /// Total number of lines (not counting separator).
     pub fn total_lines(&self) -> usize {
-        self.comment_lines.len() + self.type_lines.len() + self.todo_lines.len()
+        self.comment_lines.len()
+            + self.type_lines.len()
+            + self.todo_lines.len()
+            + self.import_lines.len()
     }
 }
 
