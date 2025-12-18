@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--markdown` / `-m` flag for Markdown output format (#46)
+  - Outputs tree as nested markdown list, ideal for documentation and LLM context
+  - Directories shown in bold (`**name/**`), files in code spans (`` `name` ``)
+  - Comments shown inline or as blockquotes in full mode
+  - Supports combining with `-c`, `-t`, `--todos` for metadata
 - `--todos` flag to extract and display TODO/FIXME/HACK/XXX/BUG/NOTE markers from comments (#45)
   - Shows task markers beneath file entries with line numbers
   - Combines with `-c` to show both comments and TODOs
