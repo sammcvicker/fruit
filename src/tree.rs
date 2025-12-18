@@ -373,26 +373,26 @@ impl StreamingWalker {
         let extract_comments = self.config.extract_comments;
         let extract_types = self.config.extract_types;
 
-        let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
-            if self.config.parallel_workers == 0 {
-                // Auto-detect: use rayon's default thread pool
-                file_indices
-                    .par_iter()
-                    .map(|&i| {
-                        let path = &entries[i].path;
-                        let metadata =
-                            extract_metadata_from_path(path, extract_comments, extract_types);
-                        (i, metadata)
-                    })
-                    .collect()
-            } else {
-                // Use custom thread pool with specified worker count
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(self.config.parallel_workers)
-                    .build()
-                    .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
-
-                pool.install(|| {
+        let metadata_results: Vec<(usize, Option<MetadataBlock>)> = if self.config.parallel_workers
+            == 0
+        {
+            // Auto-detect: use rayon's default thread pool
+            file_indices
+                .par_iter()
+                .map(|&i| {
+                    let path = &entries[i].path;
+                    let metadata =
+                        extract_metadata_from_path(path, extract_comments, extract_types);
+                    (i, metadata)
+                })
+                .collect()
+        } else {
+            // Use custom thread pool with specified worker count
+            match rayon::ThreadPoolBuilder::new()
+                .num_threads(self.config.parallel_workers)
+                .build()
+            {
+                Ok(pool) => pool.install(|| {
                     file_indices
                         .par_iter()
                         .map(|&i| {
@@ -402,8 +402,21 @@ impl StreamingWalker {
                             (i, metadata)
                         })
                         .collect()
-                })
-            };
+                }),
+                Err(_) => {
+                    // Fall back to rayon's global pool if custom pool creation fails
+                    file_indices
+                        .par_iter()
+                        .map(|&i| {
+                            let path = &entries[i].path;
+                            let metadata =
+                                extract_metadata_from_path(path, extract_comments, extract_types);
+                            (i, metadata)
+                        })
+                        .collect()
+                }
+            }
+        };
 
         // Build a map of index -> metadata for quick lookup
         let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
