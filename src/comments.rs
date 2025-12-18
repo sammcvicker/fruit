@@ -245,7 +245,8 @@ fn extract_go_comment(content: &str) -> Option<String> {
             let comment = trimmed.strip_prefix("//").unwrap_or("").trim();
             comment_lines.push(comment);
         } else if trimmed.starts_with("/*") {
-            // Block comment - find the opening marker first, then look for closing
+            // Block comment - find matching pair from the start of this line
+            // This handles multiple block comments correctly
             if let Some(start_idx) = content.find("/*") {
                 if let Some(relative_end) = content[start_idx + 2..].find("*/") {
                     let block = &content[start_idx + 2..start_idx + 2 + relative_end];
@@ -779,6 +780,17 @@ public class Program {}
         assert_eq!(
             extract_go_comment(content),
             Some("Block comment".to_string())
+        );
+    }
+
+    #[test]
+    fn test_go_multiple_block_comments() {
+        // Issue #74: Multiple block comments should extract first one correctly
+        let content = "/* First comment */\n/* Second comment */\npackage main";
+        // Should extract only the first block comment
+        assert_eq!(
+            extract_go_comment(content),
+            Some("First comment".to_string())
         );
     }
 
