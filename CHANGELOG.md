@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `output/streaming.rs` - Streaming console formatter
   - `output/markdown.rs` - Markdown output formatter
   - `output/json.rs` - JSON output
+- Modularized `tree.rs` into separate submodules for better maintainability (#71)
+  - `tree/config.rs` - WalkerConfig type
+  - `tree/filter.rs` - FileFilter enum
+  - `tree/json_types.rs` - JSON serialization types (JsonTodoItem, TreeNode)
+  - `tree/walker.rs` - TreeWalker implementation
+  - `tree/streaming.rs` - StreamingWalker implementation
+  - `tree/utils.rs` - Shared utilities (glob matching, file size formatting)
 - Simplified duration parsing to use `humantime` crate directly, removing redundant custom parsing (#64)
 - Consolidated file-reading logic into shared `file_utils` module (#58, #65)
 - Aligned plain text metadata block formatting with colored output to ensure consistent group separators (#60)
