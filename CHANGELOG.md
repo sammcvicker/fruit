@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--size` / `-s` flag to display file sizes (#48)
+  - Shows human-readable sizes (e.g., `1.2K`, `3.5M`) next to filenames
+  - Displayed in green `[size]` brackets in console output
+  - JSON output includes `size_bytes` and `size_human` fields
+  - Markdown output shows size in parentheses: `` `file.txt` (1.2K) ``
 - `--stats` flag to show codebase statistics (#47)
   - Displays file counts, directory counts, and line counts by language
   - `--stats --json` outputs statistics as JSON for scripting

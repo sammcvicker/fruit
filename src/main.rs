@@ -130,6 +130,10 @@ struct Args {
     /// Skip line counting when showing stats (faster)
     #[arg(long = "no-lines", requires = "stats")]
     no_lines: bool,
+
+    /// Show file sizes next to filenames
+    #[arg(short = 's', long = "size")]
+    size: bool,
 }
 
 /// Determine metadata order based on which flag appeared first in argv
@@ -179,6 +183,7 @@ fn main() {
         extract_comments: show_comments,
         extract_types: show_types,
         extract_todos: show_todos,
+        show_size: args.size,
         ignore_patterns: args.ignore.clone(),
         parallel_workers: args.jobs,
     };

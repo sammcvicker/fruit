@@ -25,5 +25,7 @@ pub use stats::{
     CodebaseStats, LanguageStats, StatsCollector, StatsConfig, print_stats, print_stats_json,
 };
 pub use todos::{TodoItem, extract_todos};
-pub use tree::{FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};
+pub use tree::{
+    FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig, format_size,
+};
 pub use types::{TypeExtractor, extract_type_signatures};

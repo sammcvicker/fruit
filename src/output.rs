@@ -674,6 +674,7 @@ impl StreamingOutput for StreamingFormatter {
         is_last: bool,
         prefix: &str,
         is_root: bool,
+        size: Option<u64>,
     ) -> io::Result<()> {
         let connector = if is_last { "└── " } else { "├── " };
 
@@ -697,6 +698,15 @@ impl StreamingOutput for StreamingFormatter {
                 .set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
             write!(self.stdout, "{}", name)?;
             self.stdout.reset()?;
+
+            // Show file size if provided
+            if let Some(bytes) = size {
+                write!(self.stdout, "  ")?;
+                self.stdout
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                write!(self.stdout, "[{}]", crate::tree::format_size(bytes))?;
+                self.stdout.reset()?;
+            }
 
             if let Some(block) = metadata {
                 self.print_metadata_block(&block, prefix, is_last)?;
@@ -826,6 +836,7 @@ impl StreamingOutput for MarkdownFormatter {
         _is_last: bool,
         prefix: &str,
         is_root: bool,
+        size: Option<u64>,
     ) -> io::Result<()> {
         // Calculate indentation level from prefix length
         // Each level is 2 spaces in markdown list format
@@ -844,6 +855,13 @@ impl StreamingOutput for MarkdownFormatter {
             self.output.push_str("- `");
             self.output.push_str(name);
             self.output.push('`');
+
+            // Show file size if provided
+            if let Some(bytes) = size {
+                self.output.push_str(" (");
+                self.output.push_str(&crate::tree::format_size(bytes));
+                self.output.push(')');
+            }
 
             // Add metadata if present
             if let Some(ref block) = metadata {
@@ -929,6 +947,8 @@ mod tests {
                     comment: Some("Package manifest".to_string()),
                     types: None,
                     todos: None,
+                    size_bytes: None,
+                    size_human: None,
                 },
                 TreeNode::Dir {
                     name: "src".to_string(),
@@ -940,6 +960,8 @@ mod tests {
                             comment: Some("CLI entry point".to_string()),
                             types: None,
                             todos: None,
+                            size_bytes: None,
+                            size_human: None,
                         },
                         TreeNode::File {
                             name: "lib.rs".to_string(),
@@ -947,6 +969,8 @@ mod tests {
                             comment: None,
                             types: None,
                             todos: None,
+                            size_bytes: None,
+                            size_human: None,
                         },
                     ],
                 },
@@ -1013,6 +1037,8 @@ mod tests {
             comment: Some("Single line comment".to_string()),
             types: None,
             todos: None,
+            size_bytes: None,
+            size_human: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -1046,6 +1072,8 @@ mod tests {
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
             todos: None,
+            size_bytes: None,
+            size_human: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -1084,6 +1112,8 @@ mod tests {
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
             todos: None,
+            size_bytes: None,
+            size_human: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -1126,6 +1156,8 @@ mod tests {
             comment: Some("Comment text".to_string()),
             types: None,
             todos: None,
+            size_bytes: None,
+            size_human: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -1158,6 +1190,8 @@ mod tests {
             comment: None,
             types: None,
             todos: None,
+            size_bytes: None,
+            size_human: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {

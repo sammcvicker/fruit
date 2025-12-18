@@ -113,6 +113,10 @@ pub enum TreeNode {
         types: Option<Vec<String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         todos: Option<Vec<JsonTodoItem>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        size_bytes: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        size_human: Option<String>,
     },
     Dir {
         name: String,
@@ -142,6 +146,7 @@ pub struct WalkerConfig {
     pub extract_comments: bool,
     pub extract_types: bool,
     pub extract_todos: bool,
+    pub show_size: bool,
     pub ignore_patterns: Vec<String>,
     /// Number of parallel workers for metadata extraction.
     /// 0 = auto-detect (use all available cores)
@@ -218,12 +223,19 @@ impl TreeWalker {
             } else {
                 None
             };
+            let (size_bytes, size_human) = if self.config.show_size {
+                get_file_size(path)
+            } else {
+                (None, None)
+            };
             return Some(TreeNode::File {
                 name,
                 path: path.to_path_buf(),
                 comment,
                 types,
                 todos,
+                size_bytes,
+                size_human,
             });
         }
 
@@ -309,8 +321,9 @@ pub struct StreamingWalker {
     filter: Option<FileFilter>,
 }
 
-/// Callback for streaming output - receives name, metadata, is_dir, is_last, prefix
+/// Callback for streaming output - receives node information for display.
 pub trait StreamingOutput {
+    #[allow(clippy::too_many_arguments)]
     fn output_node(
         &mut self,
         name: &str,
@@ -319,6 +332,7 @@ pub trait StreamingOutput {
         is_last: bool,
         prefix: &str,
         is_root: bool,
+        size: Option<u64>,
     ) -> std::io::Result<()>;
 
     fn finish(&mut self, dir_count: usize, file_count: usize) -> std::io::Result<()>;
@@ -481,6 +495,13 @@ impl StreamingWalker {
                 metadata_map.remove(&i).flatten()
             };
 
+            // Get file size if enabled and this is a file
+            let size = if !entry.is_dir && self.config.show_size {
+                entry.path.metadata().ok().map(|m| m.len())
+            } else {
+                None
+            };
+
             output.output_node(
                 &entry.name,
                 metadata,
@@ -488,6 +509,7 @@ impl StreamingWalker {
                 entry.is_last,
                 &entry.prefix,
                 entry.is_root,
+                size,
             )?;
 
             if entry.is_dir && !entry.is_root {
@@ -678,7 +700,7 @@ impl StreamingWalker {
 
         // Output this directory (root handled specially)
         if is_root {
-            output.output_node(&name, None, true, true, prefix, true)?;
+            output.output_node(&name, None, true, true, prefix, true, None)?;
         }
 
         let mut dir_count = 0usize;
@@ -724,7 +746,7 @@ impl StreamingWalker {
             };
 
             if is_dir {
-                output.output_node(&entry_name, None, true, is_last, prefix, false)?;
+                output.output_node(&entry_name, None, true, is_last, prefix, false, None)?;
                 dir_count += 1;
 
                 // Recurse
@@ -735,7 +757,13 @@ impl StreamingWalker {
                     file_count += f;
                 }
             } else {
-                output.output_node(&entry_name, metadata, false, is_last, prefix, false)?;
+                // Get file size if enabled
+                let size = if self.config.show_size {
+                    entry_path.metadata().ok().map(|m| m.len())
+                } else {
+                    None
+                };
+                output.output_node(&entry_name, metadata, false, is_last, prefix, false, size)?;
                 file_count += 1;
             }
         }
@@ -802,6 +830,34 @@ fn extract_metadata_from_path(
     }
 
     if block.is_empty() { None } else { Some(block) }
+}
+
+/// Get file size and return both bytes and human-readable format.
+fn get_file_size(path: &Path) -> (Option<u64>, Option<String>) {
+    match path.metadata() {
+        Ok(meta) => {
+            let size = meta.len();
+            (Some(size), Some(format_size(size)))
+        }
+        Err(_) => (None, None),
+    }
+}
+
+/// Format a size in bytes to human-readable format.
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1}G", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1}M", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1}K", bytes as f64 / KB as f64)
+    } else {
+        format!("{}B", bytes)
+    }
 }
 
 #[cfg(test)]
