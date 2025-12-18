@@ -861,6 +861,7 @@ mod tests {
                     name: "Cargo.toml".to_string(),
                     path: "Cargo.toml".into(),
                     comment: Some("Package manifest".to_string()),
+                    types: None,
                 },
                 TreeNode::Dir {
                     name: "src".to_string(),
@@ -870,11 +871,13 @@ mod tests {
                             name: "main.rs".to_string(),
                             path: "src/main.rs".into(),
                             comment: Some("CLI entry point".to_string()),
+                            types: None,
                         },
                         TreeNode::File {
                             name: "lib.rs".to_string(),
                             path: "src/lib.rs".into(),
                             comment: None,
+                            types: None,
                         },
                     ],
                 },

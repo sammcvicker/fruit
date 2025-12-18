@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Type signatures in JSON output when using `-t/--types` flag (#29)
+  - `--json -t` now includes a `types` array in each file object
+  - `--json -c -t` includes both `comment` and `types` fields
+  - Maintains consistency between console and JSON output modes
 - `-j/--jobs` flag for parallel metadata extraction (#22)
   - `-j0` (default): auto-detect CPU count, use all available cores
   - `-j1`: sequential mode (original behavior)

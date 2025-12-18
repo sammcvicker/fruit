@@ -42,6 +42,8 @@ pub enum TreeNode {
         path: PathBuf,
         #[serde(skip_serializing_if = "Option::is_none")]
         comment: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        types: Option<Vec<String>>,
     },
     Dir {
         name: String,
@@ -135,10 +137,17 @@ impl TreeWalker {
             } else {
                 None
             };
+            let types = if self.config.extract_types {
+                extract_type_signatures(path)
+                    .map(|sigs| sigs.into_iter().map(|(sig, _sym, _indent)| sig).collect())
+            } else {
+                None
+            };
             return Some(TreeNode::File {
                 name,
                 path: path.to_path_buf(),
                 comment,
+                types,
             });
         }
 
