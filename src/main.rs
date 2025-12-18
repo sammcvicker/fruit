@@ -150,6 +150,11 @@ struct Args {
     /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
     #[arg(long = "older", value_name = "DURATION")]
     older: Option<String>,
+
+    /// Maximum file size for comment/type extraction (default: 1MB)
+    /// Files larger than this are skipped. Use suffixes: K, M, G (e.g., 5M for 5MB)
+    #[arg(long = "max-file-size", value_name = "SIZE")]
+    max_file_size: Option<String>,
 }
 
 /// Parse a duration string like "1h", "7d", "2w" into a Duration.
@@ -163,6 +168,35 @@ struct Args {
 /// - Years: y, yr, yrs, year, years (365.25 days)
 fn parse_duration_string(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s.trim()).map_err(|e| e.to_string())
+}
+
+/// Parse a file size string like "5M", "100K", "1G" into bytes.
+/// Supports suffixes: K/KB (1024), M/MB (1024^2), G/GB (1024^3)
+/// Without suffix, interprets as bytes.
+fn parse_file_size(s: &str) -> Result<u64, String> {
+    let s = s.trim().to_uppercase();
+    let (num_str, multiplier) = if let Some(n) = s.strip_suffix("GB") {
+        (n, 1024 * 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix('G') {
+        (n, 1024 * 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix("MB") {
+        (n, 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix('M') {
+        (n, 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix("KB") {
+        (n, 1024)
+    } else if let Some(n) = s.strip_suffix('K') {
+        (n, 1024)
+    } else {
+        (s.as_str(), 1)
+    };
+
+    let num: u64 = num_str
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number: {}", num_str))?;
+
+    Ok(num * multiplier)
 }
 
 /// Determine metadata order based on which flag appeared first in argv
@@ -180,6 +214,19 @@ fn get_metadata_order(matches: &ArgMatches) -> MetadataOrder {
 fn main() {
     let matches = Args::command().get_matches();
     let args = Args::from_arg_matches(&matches).unwrap();
+
+    // Configure max file size for extraction if specified
+    if let Some(ref size_str) = args.max_file_size {
+        match parse_file_size(size_str) {
+            Ok(size) => {
+                fruit::file_utils::set_max_file_size(size);
+            }
+            Err(e) => {
+                eprintln!("fruit: invalid --max-file-size '{}': {}", size_str, e);
+                process::exit(1);
+            }
+        }
+    }
 
     // Determine what metadata to show:
     // - --no-comments: disable comments (for backwards compatibility)

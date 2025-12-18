@@ -4,15 +4,30 @@
 //! for reading source files with size limits and extension detection.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Maximum file size for extraction operations (1MB).
+/// Default maximum file size for extraction operations (1MB).
 /// Files larger than this are skipped to prevent excessive memory usage.
-pub const MAX_FILE_SIZE: u64 = 1_000_000;
+pub const DEFAULT_MAX_FILE_SIZE: u64 = 1_000_000;
+
+/// Global configurable max file size. Set via `set_max_file_size()`.
+static MAX_FILE_SIZE: AtomicU64 = AtomicU64::new(DEFAULT_MAX_FILE_SIZE);
+
+/// Set the maximum file size for extraction operations.
+/// This affects all subsequent calls to `read_source_file`.
+pub fn set_max_file_size(size: u64) {
+    MAX_FILE_SIZE.store(size, Ordering::SeqCst);
+}
+
+/// Get the current maximum file size setting.
+pub fn get_max_file_size() -> u64 {
+    MAX_FILE_SIZE.load(Ordering::SeqCst)
+}
 
 /// Read a source file if it meets size requirements.
 ///
 /// Returns `None` if:
-/// - File is larger than MAX_FILE_SIZE
+/// - File is larger than the configured MAX_FILE_SIZE
 /// - File has no extension
 /// - Extension is not valid UTF-8
 /// - File cannot be read
@@ -21,7 +36,7 @@ pub const MAX_FILE_SIZE: u64 = 1_000_000;
 pub fn read_source_file(path: &Path) -> Option<(String, &str)> {
     // Check file size first
     if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
+        if metadata.len() > get_max_file_size() {
             return None;
         }
     }
