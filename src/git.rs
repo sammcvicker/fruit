@@ -112,8 +112,6 @@ impl GitignoreFilter {
 /// Filter based on git tracking status (files in the git index).
 /// Use this with --tracked flag to show only git-tracked files.
 pub struct GitFilter {
-    #[allow(dead_code)]
-    repo: Repository,
     tracked_files: HashSet<PathBuf>,
     tracked_dirs: HashSet<PathBuf>,
     repo_root: PathBuf,
@@ -139,7 +137,6 @@ impl GitFilter {
         }
 
         Some(Self {
-            repo,
             tracked_files,
             tracked_dirs,
             repo_root,
