@@ -48,14 +48,22 @@ fn has_included_files(path: &Path, filter: &Option<FileFilter>) -> bool {
     }
 }
 
-/// Check if a path should be included based on filter and show_all flag.
+/// Check if a path should be included based on filter, show_all flag, and time filters.
 fn should_include_path(path: &Path, config: &WalkerConfig, filter: &Option<FileFilter>) -> bool {
-    if config.show_all {
-        return true;
+    // Check gitignore filter
+    if !config.show_all {
+        if let Some(f) = filter {
+            if !f.is_included(path) {
+                return false;
+            }
+        }
     }
-    if let Some(f) = filter {
-        return f.is_included(path);
+
+    // Check time filter (applies to files only)
+    if path.is_file() && !passes_time_filter(path, config) {
+        return false;
     }
+
     true
 }
 
@@ -141,6 +149,8 @@ impl TreeNode {
     }
 }
 
+use std::time::SystemTime;
+
 #[derive(Debug, Clone, Default)]
 pub struct WalkerConfig {
     pub show_all: bool,
@@ -157,6 +167,10 @@ pub struct WalkerConfig {
     /// 1 = sequential (no parallelism)
     /// N = use N worker threads
     pub parallel_workers: usize,
+    /// Only include files modified after this time
+    pub newer_than: Option<SystemTime>,
+    /// Only include files modified before this time
+    pub older_than: Option<SystemTime>,
 }
 
 pub struct TreeWalker {
@@ -888,6 +902,36 @@ pub fn format_size(bytes: u64) -> String {
     } else {
         format!("{}B", bytes)
     }
+}
+
+/// Check if a file passes the time filter based on its modification time.
+fn passes_time_filter(path: &Path, config: &WalkerConfig) -> bool {
+    // If no time filters, pass
+    if config.newer_than.is_none() && config.older_than.is_none() {
+        return true;
+    }
+
+    // Get modification time
+    let mtime = match path.metadata().and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return true, // If we can't get mtime, include the file
+    };
+
+    // Check newer_than filter
+    if let Some(newer) = config.newer_than {
+        if mtime < newer {
+            return false;
+        }
+    }
+
+    // Check older_than filter
+    if let Some(older) = config.older_than {
+        if mtime > older {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[cfg(test)]
