@@ -86,30 +86,37 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
         let indent = calculate_indent(line);
 
         // Check each pattern - capture group index varies for fn (has optional async)
+        // Use pattern matching to safely handle capture groups
         if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         }
     }
 
@@ -144,30 +151,37 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, u
         let indent = calculate_indent(line);
 
         // Check each pattern - capture group index varies for function/class/enum (have optional modifiers)
+        // Use pattern matching to safely handle capture groups
         if let Some(caps) = TS_EXPORT_FUNCTION.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = TS_EXPORT_INTERFACE.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = TS_EXPORT_TYPE.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = TS_EXPORT_CLASS.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = TS_EXPORT_CONST.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = TS_EXPORT_ENUM.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         }
     }
 
@@ -195,20 +209,23 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, u
 
         let indent = calculate_indent(line);
 
-        // Check each pattern
+        // Check each pattern - use pattern matching to safely handle capture groups
         if let Some(caps) = JS_EXPORT_FUNCTION.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(2).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = JS_EXPORT_CLASS.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = JS_EXPORT_CONST.captures(trimmed) {
             // For const, just show the declaration without the value
-            let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig.to_string(), sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = full.as_str().trim_end_matches('=').trim();
+                signatures.push((sig.to_string(), sym_match.as_str().to_string(), indent));
+            }
         }
     }
 
@@ -244,18 +261,22 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
         let indent = calculate_indent(line);
 
         // Check each pattern (async first to avoid partial matches)
+        // Use pattern matching to safely handle capture groups
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = PY_CLASS.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         }
     }
 
@@ -288,26 +309,32 @@ fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> 
         let indent = calculate_indent(line);
 
         // Check each pattern (method before func to get receiver)
+        // Use pattern matching to safely handle capture groups
         if let Some(caps) = GO_EXPORTED_METHOD.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = GO_EXPORTED_FUNC.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = GO_EXPORTED_TYPE.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = GO_EXPORTED_CONST.captures(trimmed) {
-            let sig = caps.get(0).unwrap().as_str().trim_end_matches('=').trim();
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig.to_string(), sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = full.as_str().trim_end_matches('=').trim();
+                signatures.push((sig.to_string(), sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = GO_EXPORTED_VAR.captures(trimmed) {
-            let sig = clean_signature(caps.get(0).unwrap().as_str());
-            let sym = caps.get(1).unwrap().as_str().to_string();
-            signatures.push((sig, sym, indent));
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         }
     }
 
