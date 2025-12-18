@@ -1,13 +1,14 @@
 //! CLI entry point for fruit
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use fruit::{
-    GitignoreFilter, MarkdownFormatter, MetadataConfig, MetadataOrder, OutputConfig,
-    StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig, print_json, print_markdown,
+    CodebaseStats, GitignoreFilter, MarkdownFormatter, MetadataConfig, MetadataOrder, OutputConfig,
+    StatsCollector, StatsConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
+    print_json, print_markdown, print_stats, print_stats_json,
 };
 
 /// Color output mode
@@ -121,6 +122,14 @@ struct Args {
     /// (0 = auto-detect, 1 = sequential, N = use N workers)
     #[arg(short = 'j', long = "jobs", default_value = "0")]
     jobs: usize,
+
+    /// Show codebase statistics (file counts, language breakdown, line counts)
+    #[arg(long = "stats")]
+    stats: bool,
+
+    /// Skip line counting when showing stats (faster)
+    #[arg(long = "no-lines", requires = "stats")]
+    no_lines: bool,
 }
 
 /// Determine metadata order based on which flag appeared first in argv
@@ -182,9 +191,21 @@ fn main() {
             .join(&args.path)
     };
 
-    // JSON output requires full tree in memory (for serialization)
-    // Markdown and console output use streaming to reduce memory usage
-    let result = if args.json {
+    // Handle different output modes
+    let result = if args.stats {
+        // Stats mode: collect and display codebase statistics
+        let stats_config = StatsConfig {
+            count_lines: !args.no_lines,
+        };
+        let stats = collect_stats(&root, &args, stats_config);
+
+        if args.json {
+            print_stats_json(&stats)
+        } else {
+            print_stats(&stats, should_use_color(args.color))
+        }
+    } else if args.json {
+        // JSON output requires full tree in memory (for serialization)
         let mut walker = TreeWalker::new(walker_config);
 
         // Set up gitignore filter unless --all is specified
@@ -276,4 +297,46 @@ fn main() {
         eprintln!("fruit: error writing output: {}", e);
         process::exit(1);
     }
+}
+
+/// Collect codebase statistics by walking the directory tree.
+fn collect_stats(root: &Path, args: &Args, stats_config: StatsConfig) -> CodebaseStats {
+    use ignore::WalkBuilder;
+
+    let mut collector = StatsCollector::new(stats_config);
+
+    let walker = if args.all {
+        WalkBuilder::new(root)
+            .hidden(false)
+            .ignore(false)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .build()
+    } else {
+        WalkBuilder::new(root)
+            .hidden(true)
+            .ignore(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build()
+    };
+
+    for entry in walker.flatten() {
+        let path = entry.path();
+
+        // Skip the root directory itself
+        if path == root {
+            continue;
+        }
+
+        if path.is_dir() {
+            collector.record_directory();
+        } else if path.is_file() {
+            collector.record_file(path);
+        }
+    }
+
+    collector.finalize()
 }
