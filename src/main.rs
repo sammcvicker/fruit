@@ -202,15 +202,12 @@ fn main() {
             }
         }
 
-        let metadata_config = {
-            let config = MetadataConfig {
-                comments: show_comments,
-                types: show_types,
-                full: full_mode,
-                prefix: args.prefix.clone(),
-                order: get_metadata_order(&matches),
-            };
-            config
+        let metadata_config = MetadataConfig {
+            comments: show_comments,
+            types: show_types,
+            full: full_mode,
+            prefix: args.prefix.clone(),
+            order: get_metadata_order(&matches),
         };
 
         let output_config = OutputConfig {
