@@ -3,6 +3,7 @@
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::{Duration, SystemTime};
 
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use fruit::{
@@ -139,6 +140,59 @@ struct Args {
     /// Show file sizes next to filenames
     #[arg(short = 's', long = "size")]
     size: bool,
+
+    /// Only show files modified more recently than DURATION ago
+    /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
+    #[arg(long = "newer", value_name = "DURATION")]
+    newer: Option<String>,
+
+    /// Only show files modified longer than DURATION ago
+    /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
+    #[arg(long = "older", value_name = "DURATION")]
+    older: Option<String>,
+}
+
+/// Parse a duration string like "1h", "7d", "2w" into a Duration.
+/// Supports: s (seconds), m (minutes), h (hours), d (days), w (weeks), M (months), y (years)
+fn parse_duration_string(s: &str) -> Result<Duration, String> {
+    // Try humantime first for standard durations
+    if let Ok(d) = humantime::parse_duration(s) {
+        return Ok(d);
+    }
+
+    // Parse our custom short format: 1h, 7d, 2w, 3M, 1y
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("empty duration".to_string());
+    }
+
+    // Find where the number ends and unit begins
+    let num_end = s
+        .chars()
+        .position(|c| !c.is_ascii_digit())
+        .unwrap_or(s.len());
+
+    if num_end == 0 || num_end == s.len() {
+        return Err(format!("invalid duration format: {}", s));
+    }
+
+    let num: u64 = s[..num_end]
+        .parse()
+        .map_err(|_| format!("invalid number in duration: {}", s))?;
+    let unit = &s[num_end..];
+
+    let seconds = match unit {
+        "s" | "sec" | "secs" | "second" | "seconds" => num,
+        "m" | "min" | "mins" | "minute" | "minutes" => num * 60,
+        "h" | "hr" | "hrs" | "hour" | "hours" => num * 3600,
+        "d" | "day" | "days" => num * 86400,
+        "w" | "wk" | "wks" | "week" | "weeks" => num * 604800,
+        "M" | "mo" | "month" | "months" => num * 2592000, // 30 days
+        "y" | "yr" | "yrs" | "year" | "years" => num * 31536000, // 365 days
+        _ => return Err(format!("unknown time unit: {}", unit)),
+    };
+
+    Ok(Duration::from_secs(seconds))
 }
 
 /// Determine metadata order based on which flag appeared first in argv
@@ -181,6 +235,23 @@ fn main() {
     // When -t or --todos or --imports is specified, default to full mode
     let full_mode = args.full_comment || args.types || args.todos || args.imports;
 
+    // Parse time filters
+    let newer_than = args.newer.as_ref().map(|s| {
+        let duration = parse_duration_string(s).unwrap_or_else(|e| {
+            eprintln!("fruit: invalid --newer duration '{}': {}", s, e);
+            process::exit(1);
+        });
+        SystemTime::now() - duration
+    });
+
+    let older_than = args.older.as_ref().map(|s| {
+        let duration = parse_duration_string(s).unwrap_or_else(|e| {
+            eprintln!("fruit: invalid --older duration '{}': {}", s, e);
+            process::exit(1);
+        });
+        SystemTime::now() - duration
+    });
+
     let walker_config = WalkerConfig {
         show_all: args.all,
         max_depth: args.level,
@@ -192,6 +263,8 @@ fn main() {
         show_size: args.size,
         ignore_patterns: args.ignore.clone(),
         parallel_workers: args.jobs,
+        newer_than,
+        older_than,
     };
 
     let root = if args.path.is_absolute() {

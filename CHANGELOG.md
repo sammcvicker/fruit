@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--newer` and `--older` flags to filter files by modification time (#50)
+  - `--newer 1h` shows only files modified within the last hour
+  - `--older 7d` shows only files not modified in the last 7 days
+  - Supports duration formats: `30s`, `5m`, `1h`, `7d`, `2w`, `3M`, `1y`
+  - Combine filters: `--newer 7d --older 1d` for files between 1-7 days old
+  - Useful for finding recently changed code or detecting stale files
 - `--imports` / `-i` flag to show import/dependency statements (#49)
   - Extracts imports from Rust, TypeScript, JavaScript, Python, and Go files
   - Categorizes imports as external (packages), std (standard library), or internal (project)
