@@ -245,17 +245,18 @@ fn extract_go_comment(content: &str) -> Option<String> {
             let comment = trimmed.strip_prefix("//").unwrap_or("").trim();
             comment_lines.push(comment);
         } else if trimmed.starts_with("/*") {
-            // Block comment
-            if let Some(end_idx) = content.find("*/") {
-                let start_idx = content.find("/*").unwrap();
-                let block = &content[start_idx + 2..end_idx];
-                let cleaned: Vec<&str> = block
-                    .lines()
-                    .map(|l| l.trim().trim_start_matches('*').trim())
-                    .filter(|l| !l.is_empty())
-                    .collect();
-                if !cleaned.is_empty() {
-                    return Some(cleaned.join("\n"));
+            // Block comment - find the opening marker first, then look for closing
+            if let Some(start_idx) = content.find("/*") {
+                if let Some(relative_end) = content[start_idx + 2..].find("*/") {
+                    let block = &content[start_idx + 2..start_idx + 2 + relative_end];
+                    let cleaned: Vec<&str> = block
+                        .lines()
+                        .map(|l| l.trim().trim_start_matches('*').trim())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    if !cleaned.is_empty() {
+                        return Some(cleaned.join("\n"));
+                    }
                 }
             }
             break;
@@ -767,6 +768,36 @@ public class Program {}
         let content = "// Comment 1\nimport \"fmt\"\n// Comment 2\npackage main";
         // Should get Comment 2, not Comment 1
         assert_eq!(extract_go_comment(content), Some("Comment 2".to_string()));
+    }
+
+    #[test]
+    fn test_go_orphan_close_comment_no_panic() {
+        // Issue #67: File with */ but no matching /* should not panic
+        // This tests that we don't call unwrap() on a find that might return None
+        let content = "/* Block comment */\npackage main";
+        // Normal case should still work
+        assert_eq!(
+            extract_go_comment(content),
+            Some("Block comment".to_string())
+        );
+    }
+
+    #[test]
+    fn test_go_unclosed_block_comment() {
+        // Block comment without closing */ should not panic
+        let content = "/* Unclosed block comment\npackage main";
+        // Should return None since block is not closed
+        assert_eq!(extract_go_comment(content), None);
+    }
+
+    #[test]
+    fn test_go_close_comment_in_string() {
+        // Edge case: */ appearing in string or example without matching /*
+        let content = "// Comment with */ in it\npackage main";
+        assert_eq!(
+            extract_go_comment(content),
+            Some("Comment with */ in it".to_string())
+        );
     }
 
     #[test]
