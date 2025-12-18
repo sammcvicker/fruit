@@ -45,18 +45,24 @@ pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize
 // Static regex patterns for each language
 
 // Rust patterns - with capture groups for symbol names
-static RUST_PUB_FN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+(async\s+)?fn\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_STRUCT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+struct\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+enum\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_TRAIT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+trait\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+type\s+(\w+)[^;]+").unwrap());
-static RUST_PUB_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").unwrap());
+static RUST_PUB_FN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+(async\s+)?fn\s+(\w+)[^{;]*").expect("RUST_PUB_FN regex is invalid")
+});
+static RUST_PUB_STRUCT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+struct\s+(\w+)[^{;]*").expect("RUST_PUB_STRUCT regex is invalid")
+});
+static RUST_PUB_ENUM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+enum\s+(\w+)[^{;]*").expect("RUST_PUB_ENUM regex is invalid")
+});
+static RUST_PUB_TRAIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+trait\s+(\w+)[^{;]*").expect("RUST_PUB_TRAIT regex is invalid")
+});
+static RUST_PUB_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+type\s+(\w+)[^;]+").expect("RUST_PUB_TYPE regex is invalid")
+});
+static RUST_PUB_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").expect("RUST_PUB_CONST regex is invalid")
+});
 
 fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -114,18 +120,26 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
 }
 
 // TypeScript patterns - with capture groups for symbol names
-static TS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_INTERFACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+interface\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+type\s+(\w+)[^=]*=\s*[^;{]+").unwrap());
-static TS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(abstract\s+)?class\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+):\s*[^=]+").unwrap());
-static TS_EXPORT_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").unwrap());
+static TS_EXPORT_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(async\s+)?function\s+(\w+)[^{]*")
+        .expect("TS_EXPORT_FUNCTION regex is invalid")
+});
+static TS_EXPORT_INTERFACE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+interface\s+(\w+)[^{]*").expect("TS_EXPORT_INTERFACE regex is invalid")
+});
+static TS_EXPORT_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+type\s+(\w+)[^=]*=\s*[^;{]+").expect("TS_EXPORT_TYPE regex is invalid")
+});
+static TS_EXPORT_CLASS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(abstract\s+)?class\s+(\w+)[^{]*")
+        .expect("TS_EXPORT_CLASS regex is invalid")
+});
+static TS_EXPORT_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+const\s+(\w+):\s*[^=]+").expect("TS_EXPORT_CONST regex is invalid")
+});
+static TS_EXPORT_ENUM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").expect("TS_EXPORT_ENUM regex is invalid")
+});
 
 fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -179,12 +193,16 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, u
 }
 
 // JavaScript patterns (subset of TypeScript, no type annotations) - with capture groups
-static JS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)\s*\([^)]*\)").unwrap());
-static JS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+class\s+(\w+)[^{]*").unwrap());
-static JS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+)\s*=").unwrap());
+static JS_EXPORT_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(async\s+)?function\s+(\w+)\s*\([^)]*\)")
+        .expect("JS_EXPORT_FUNCTION regex is invalid")
+});
+static JS_EXPORT_CLASS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+class\s+(\w+)[^{]*").expect("JS_EXPORT_CLASS regex is invalid")
+});
+static JS_EXPORT_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+const\s+(\w+)\s*=").expect("JS_EXPORT_CONST regex is invalid")
+});
 
 fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -223,11 +241,16 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, u
 }
 
 // Python patterns - with capture groups for symbol names
-static PY_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
-static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
-static PY_CLASS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").unwrap());
+static PY_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
+        .expect("PY_DEF_WITH_RETURN regex is invalid")
+});
+static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
+        .expect("PY_ASYNC_DEF_WITH_RETURN regex is invalid")
+});
+static PY_CLASS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").expect("PY_CLASS regex is invalid"));
 
 fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -274,16 +297,22 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
 }
 
 // Go patterns - exported items start with uppercase - with capture groups
-static GO_EXPORTED_FUNC: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
-static GO_EXPORTED_METHOD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+\([^)]+\)\s*([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
-static GO_EXPORTED_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^type\s+([A-Z]\w*)\s+\w+").unwrap());
-static GO_EXPORTED_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^const\s+([A-Z]\w*)\s*[^=]*=").unwrap());
-static GO_EXPORTED_VAR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").unwrap());
+static GO_EXPORTED_FUNC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^func\s+([A-Z]\w*)\s*\([^)]*\)[^{]*").expect("GO_EXPORTED_FUNC regex is invalid")
+});
+static GO_EXPORTED_METHOD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^func\s+\([^)]+\)\s*([A-Z]\w*)\s*\([^)]*\)[^{]*")
+        .expect("GO_EXPORTED_METHOD regex is invalid")
+});
+static GO_EXPORTED_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^type\s+([A-Z]\w*)\s+\w+").expect("GO_EXPORTED_TYPE regex is invalid")
+});
+static GO_EXPORTED_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^const\s+([A-Z]\w*)\s*[^=]*=").expect("GO_EXPORTED_CONST regex is invalid")
+});
+static GO_EXPORTED_VAR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").expect("GO_EXPORTED_VAR regex is invalid")
+});
 
 fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
