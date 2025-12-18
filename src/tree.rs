@@ -118,7 +118,7 @@ impl TreeWalker {
             return None;
         }
 
-        let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
 
         let name = path
             .file_name()
@@ -171,7 +171,7 @@ impl TreeWalker {
         };
 
         let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         for entry in entries {
             let entry_path = entry.path();
@@ -468,7 +468,7 @@ impl StreamingWalker {
         };
 
         let mut dir_entries: Vec<_> = dir_entries.filter_map(|e| e.ok()).collect();
-        dir_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        dir_entries.sort_by_key(|a| a.file_name());
 
         // Filter entries
         let filtered_entries: Vec<_> = dir_entries
@@ -516,10 +516,11 @@ impl StreamingWalker {
                     continue;
                 }
                 valid_entries.push((entry, false)); // false = is file
-            } else if entry_path.is_dir() && !entry_path.is_symlink() {
-                if self.config.dirs_only || self.has_included_files(&entry_path) {
-                    valid_entries.push((entry, true)); // true = is directory
-                }
+            } else if entry_path.is_dir()
+                && !entry_path.is_symlink()
+                && (self.config.dirs_only || self.has_included_files(&entry_path))
+            {
+                valid_entries.push((entry, true)); // true = is directory
             }
         }
 
@@ -578,7 +579,7 @@ impl StreamingWalker {
             return Ok(None);
         }
 
-        let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
 
         // Files are handled by their parent directory iteration
         if path.is_file() || !path.is_dir() {
@@ -592,7 +593,7 @@ impl StreamingWalker {
         };
 
         let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         // Filter entries first to know which ones will be included
         let filtered_entries: Vec<_> = entries

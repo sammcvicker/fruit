@@ -61,12 +61,11 @@ fn extract_rust_comment(content: &str) -> Option<String> {
             in_doc_comment = true;
             let comment = trimmed.strip_prefix("///").unwrap_or("").trim();
             doc_lines.push(comment);
-        } else if in_doc_comment {
-            break;
-        } else if !trimmed.is_empty()
-            && !trimmed.starts_with("//")
-            && !trimmed.starts_with("#[")
-            && !trimmed.starts_with("#![")
+        } else if in_doc_comment
+            || (!trimmed.is_empty()
+                && !trimmed.starts_with("//")
+                && !trimmed.starts_with("#[")
+                && !trimmed.starts_with("#!["))
         {
             break;
         }
@@ -350,10 +349,10 @@ fn extract_javadoc_comment(content: &str) -> Option<String> {
 fn extract_php_comment(content: &str) -> Option<String> {
     // Skip <?php tag
     let content = content.trim_start();
-    let content = if content.starts_with("<?php") {
-        &content[5..]
-    } else if content.starts_with("<?") {
-        &content[2..]
+    let content = if let Some(stripped) = content.strip_prefix("<?php") {
+        stripped
+    } else if let Some(stripped) = content.strip_prefix("<?") {
+        stripped
     } else {
         content
     };
