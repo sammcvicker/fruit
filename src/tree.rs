@@ -3,10 +3,17 @@
 use std::path::{Path, PathBuf};
 
 use glob::Pattern;
+use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::comments::extract_first_comment;
 use crate::git::{GitFilter, GitignoreFilter};
+use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
+use crate::todos::extract_todos;
+use crate::types::extract_type_signatures;
+
+// Re-export for convenience
+pub use crate::metadata::MetadataOrder;
 
 /// File filter that can use either gitignore patterns or git tracking status.
 pub enum FileFilter {
@@ -26,6 +33,72 @@ impl FileFilter {
     }
 }
 
+// ============================================================================
+// Shared filtering functions used by both TreeWalker and StreamingWalker
+// ============================================================================
+
+/// Check if a directory has any included files (used for pruning empty directories).
+fn has_included_files(path: &Path, filter: &Option<FileFilter>) -> bool {
+    if let Some(f) = filter {
+        f.is_included(path)
+    } else {
+        // Without filter, assume directory has content
+        true
+    }
+}
+
+/// Check if a path should be included based on filter and show_all flag.
+fn should_include_path(path: &Path, config: &WalkerConfig, filter: &Option<FileFilter>) -> bool {
+    if config.show_all {
+        return true;
+    }
+    if let Some(f) = filter {
+        return f.is_included(path);
+    }
+    true
+}
+
+/// Check if a path should be ignored based on name and ignore patterns.
+fn should_ignore_path(path: &Path, ignore_patterns: &[String]) -> bool {
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Always ignore .git directory
+    if name == ".git" {
+        return true;
+    }
+
+    // Check custom ignore patterns
+    for pattern in ignore_patterns {
+        if name == *pattern || glob_match(pattern, &name) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Serializable TODO item for JSON output.
+#[derive(Debug, Clone, Serialize)]
+pub struct JsonTodoItem {
+    #[serde(rename = "type")]
+    pub marker_type: String,
+    pub text: String,
+    pub line: usize,
+}
+
+impl From<&crate::todos::TodoItem> for JsonTodoItem {
+    fn from(item: &crate::todos::TodoItem) -> Self {
+        Self {
+            marker_type: item.marker_type.clone(),
+            text: item.text.clone(),
+            line: item.line,
+        }
+    }
+}
+
 /// TreeNode for JSON output - still builds full tree in memory.
 /// For large repos, use StreamingWalker instead for console output.
 #[derive(Debug, Clone, Serialize)]
@@ -36,6 +109,14 @@ pub enum TreeNode {
         path: PathBuf,
         #[serde(skip_serializing_if = "Option::is_none")]
         comment: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        types: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        todos: Option<Vec<JsonTodoItem>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        size_bytes: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        size_human: Option<String>,
     },
     Dir {
         name: String,
@@ -63,7 +144,15 @@ pub struct WalkerConfig {
     pub max_depth: Option<usize>,
     pub dirs_only: bool,
     pub extract_comments: bool,
+    pub extract_types: bool,
+    pub extract_todos: bool,
+    pub show_size: bool,
     pub ignore_patterns: Vec<String>,
+    /// Number of parallel workers for metadata extraction.
+    /// 0 = auto-detect (use all available cores)
+    /// 1 = sequential (no parallelism)
+    /// N = use N worker threads
+    pub parallel_workers: usize,
 }
 
 pub struct TreeWalker {
@@ -104,7 +193,7 @@ impl TreeWalker {
             return None;
         }
 
-        let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
 
         let name = path
             .file_name()
@@ -115,7 +204,7 @@ impl TreeWalker {
             if self.config.dirs_only {
                 return None;
             }
-            if !self.should_include(path) {
+            if !should_include_path(path, &self.config, &self.filter) {
                 return None;
             }
             let comment = if self.config.extract_comments {
@@ -123,10 +212,30 @@ impl TreeWalker {
             } else {
                 None
             };
+            let types = if self.config.extract_types {
+                extract_type_signatures(path)
+                    .map(|sigs| sigs.into_iter().map(|(sig, _sym, _indent)| sig).collect())
+            } else {
+                None
+            };
+            let todos = if self.config.extract_todos {
+                extract_todos(path).map(|items| items.iter().map(JsonTodoItem::from).collect())
+            } else {
+                None
+            };
+            let (size_bytes, size_human) = if self.config.show_size {
+                get_file_size(path)
+            } else {
+                (None, None)
+            };
             return Some(TreeNode::File {
                 name,
                 path: path.to_path_buf(),
                 comment,
+                types,
+                todos,
+                size_bytes,
+                size_human,
             });
         }
 
@@ -150,12 +259,12 @@ impl TreeWalker {
         };
 
         let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         for entry in entries {
             let entry_path = entry.path();
 
-            if self.should_ignore(&entry_path) {
+            if should_ignore_path(&entry_path, &self.config.ignore_patterns) {
                 continue;
             }
 
@@ -170,7 +279,7 @@ impl TreeWalker {
                     // Otherwise, skip truly empty directories (those with no tracked files)
                     if c.is_empty()
                         && !self.config.dirs_only
-                        && !self.has_included_files(&entry_path)
+                        && !has_included_files(&entry_path, &self.filter)
                     {
                         continue;
                     }
@@ -185,46 +294,6 @@ impl TreeWalker {
             children,
         })
     }
-
-    fn has_included_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.filter {
-            filter.is_included(path)
-        } else {
-            // Without filter, assume directory has content
-            true
-        }
-    }
-
-    fn should_include(&self, path: &Path) -> bool {
-        if self.config.show_all {
-            return true;
-        }
-        if let Some(ref filter) = self.filter {
-            return filter.is_included(path);
-        }
-        true
-    }
-
-    fn should_ignore(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Always ignore .git directory
-        if name == ".git" {
-            return true;
-        }
-
-        // Check custom ignore patterns
-        for pattern in &self.config.ignore_patterns {
-            if name == *pattern || glob_match(pattern, &name) {
-                return true;
-            }
-        }
-
-        false
-    }
 }
 
 fn glob_match(pattern: &str, name: &str) -> bool {
@@ -233,23 +302,37 @@ fn glob_match(pattern: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Entry collected during tree traversal for parallel metadata extraction.
+#[derive(Debug)]
+struct CollectedEntry {
+    name: String,
+    path: PathBuf,
+    is_dir: bool,
+    is_last: bool,
+    prefix: String,
+    is_root: bool,
+}
+
 /// Streaming tree walker that outputs directly without building tree in memory.
 /// Uses O(depth) memory instead of O(files) for the tree structure.
+/// Supports parallel metadata extraction when parallel_workers != 1.
 pub struct StreamingWalker {
     config: WalkerConfig,
     filter: Option<FileFilter>,
 }
 
-/// Callback for streaming output - receives name, comment, is_dir, is_last, prefix
+/// Callback for streaming output - receives node information for display.
 pub trait StreamingOutput {
+    #[allow(clippy::too_many_arguments)]
     fn output_node(
         &mut self,
         name: &str,
-        comment: Option<&str>,
+        metadata: Option<MetadataBlock>,
         is_dir: bool,
         is_last: bool,
         prefix: &str,
         is_root: bool,
+        size: Option<u64>,
     ) -> std::io::Result<()>;
 
     fn finish(&mut self, dir_count: usize, file_count: usize) -> std::io::Result<()>;
@@ -284,6 +367,23 @@ impl StreamingWalker {
         root: &Path,
         output: &mut O,
     ) -> std::io::Result<Option<(usize, usize)>> {
+        // Use parallel extraction if workers != 1
+        let use_parallel = self.config.parallel_workers != 1
+            && (self.config.extract_comments || self.config.extract_types);
+
+        if use_parallel {
+            self.walk_streaming_parallel(root, output)
+        } else {
+            self.walk_streaming_sequential(root, output)
+        }
+    }
+
+    /// Sequential streaming walk - original implementation for -j1 or no metadata extraction.
+    fn walk_streaming_sequential<O: StreamingOutput>(
+        &self,
+        root: &Path,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
         match self.walk_dir_streaming(root, 0, "", true, output) {
             Ok(Some((d, f))) => {
                 output.finish(d, f)?;
@@ -292,6 +392,261 @@ impl StreamingWalker {
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// Parallel streaming walk - collects files first, extracts metadata in parallel.
+    fn walk_streaming_parallel<O: StreamingOutput>(
+        &self,
+        root: &Path,
+        output: &mut O,
+    ) -> std::io::Result<Option<(usize, usize)>> {
+        // Phase 1: Collect all entries in tree order
+        let mut entries = Vec::new();
+        if self
+            .collect_entries(root, 0, "", true, &mut entries)
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        // Phase 2: Extract metadata in parallel for all files
+        // Configure rayon thread pool if specific worker count requested
+        let file_indices: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| if !e.is_dir { Some(i) } else { None })
+            .collect();
+
+        // Extract metadata in parallel
+        // Note: We use a standalone function to avoid capturing &self (which contains
+        // non-Sync FileFilter/GitFilter) in the parallel closure.
+        let extract_comments = self.config.extract_comments;
+        let extract_types = self.config.extract_types;
+        let extract_todo_markers = self.config.extract_todos;
+
+        let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
+            if self.config.parallel_workers == 0 {
+                // Auto-detect: use rayon's default thread pool
+                file_indices
+                    .par_iter()
+                    .map(|&i| {
+                        let path = &entries[i].path;
+                        let metadata = extract_metadata_from_path(
+                            path,
+                            extract_comments,
+                            extract_types,
+                            extract_todo_markers,
+                        );
+                        (i, metadata)
+                    })
+                    .collect()
+            } else {
+                // Use custom thread pool with specified worker count
+                match rayon::ThreadPoolBuilder::new()
+                    .num_threads(self.config.parallel_workers)
+                    .build()
+                {
+                    Ok(pool) => pool.install(|| {
+                        file_indices
+                            .par_iter()
+                            .map(|&i| {
+                                let path = &entries[i].path;
+                                let metadata = extract_metadata_from_path(
+                                    path,
+                                    extract_comments,
+                                    extract_types,
+                                    extract_todo_markers,
+                                );
+                                (i, metadata)
+                            })
+                            .collect()
+                    }),
+                    Err(_) => {
+                        // Fall back to rayon's global pool if custom pool creation fails
+                        file_indices
+                            .par_iter()
+                            .map(|&i| {
+                                let path = &entries[i].path;
+                                let metadata = extract_metadata_from_path(
+                                    path,
+                                    extract_comments,
+                                    extract_types,
+                                    extract_todo_markers,
+                                );
+                                (i, metadata)
+                            })
+                            .collect()
+                    }
+                }
+            };
+
+        // Build a map of index -> metadata for quick lookup
+        let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
+            metadata_results.into_iter().collect();
+
+        // Phase 3: Output entries in tree order
+        let mut dir_count = 0usize;
+        let mut file_count = 0usize;
+
+        for (i, entry) in entries.iter().enumerate() {
+            let metadata = if entry.is_dir {
+                None
+            } else {
+                metadata_map.remove(&i).flatten()
+            };
+
+            // Get file size if enabled and this is a file
+            let size = if !entry.is_dir && self.config.show_size {
+                entry.path.metadata().ok().map(|m| m.len())
+            } else {
+                None
+            };
+
+            output.output_node(
+                &entry.name,
+                metadata,
+                entry.is_dir,
+                entry.is_last,
+                &entry.prefix,
+                entry.is_root,
+                size,
+            )?;
+
+            if entry.is_dir && !entry.is_root {
+                dir_count += 1;
+            } else if !entry.is_dir {
+                file_count += 1;
+            }
+        }
+
+        output.finish(dir_count, file_count)?;
+        Ok(Some((dir_count, file_count)))
+    }
+
+    /// Collected entry for parallel processing.
+    fn collect_entries(
+        &self,
+        path: &Path,
+        depth: usize,
+        prefix: &str,
+        is_root: bool,
+        entries: &mut Vec<CollectedEntry>,
+    ) -> Option<()> {
+        // Skip symlinks to prevent infinite loops
+        if path.is_symlink() {
+            return None;
+        }
+
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
+
+        // Files are handled by their parent directory iteration
+        if path.is_file() || !path.is_dir() {
+            return None;
+        }
+
+        // Collect and sort directory entries
+        let dir_entries = match std::fs::read_dir(path) {
+            Ok(e) => e,
+            Err(_) => return None,
+        };
+
+        let mut dir_entries: Vec<_> = dir_entries.filter_map(|e| e.ok()).collect();
+        dir_entries.sort_by_key(|a| a.file_name());
+
+        // Filter entries
+        let filtered_entries: Vec<_> = dir_entries
+            .into_iter()
+            .filter(|entry| {
+                let entry_path = entry.path();
+                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
+            })
+            .collect();
+
+        // Get directory name
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+
+        // Handle max depth
+        if at_max_depth && !is_root {
+            return Some(());
+        }
+
+        // Add root directory entry
+        if is_root {
+            entries.push(CollectedEntry {
+                name,
+                path: path.to_path_buf(),
+                is_dir: true,
+                is_last: true,
+                prefix: prefix.to_string(),
+                is_root: true,
+            });
+        }
+
+        // Build list of valid entries (files and non-empty directories)
+        let mut valid_entries: Vec<(std::fs::DirEntry, bool)> = Vec::new();
+
+        for entry in filtered_entries {
+            let entry_path = entry.path();
+
+            if entry_path.is_file() {
+                if self.config.dirs_only {
+                    continue;
+                }
+                if !should_include_path(&entry_path, &self.config, &self.filter) {
+                    continue;
+                }
+                valid_entries.push((entry, false)); // false = is file
+            } else if entry_path.is_dir()
+                && !entry_path.is_symlink()
+                && (self.config.dirs_only || has_included_files(&entry_path, &self.filter))
+            {
+                valid_entries.push((entry, true)); // true = is directory
+            }
+        }
+
+        let total = valid_entries.len();
+
+        for (i, (entry, is_dir)) in valid_entries.into_iter().enumerate() {
+            let entry_path = entry.path();
+            let entry_name = entry.file_name().to_string_lossy().to_string();
+            let is_last = i == total - 1;
+
+            let new_prefix = if is_last {
+                format!("{}    ", prefix)
+            } else {
+                format!("{}│   ", prefix)
+            };
+
+            if is_dir {
+                // Add directory entry
+                entries.push(CollectedEntry {
+                    name: entry_name,
+                    path: entry_path.clone(),
+                    is_dir: true,
+                    is_last,
+                    prefix: prefix.to_string(),
+                    is_root: false,
+                });
+
+                // Recurse into directory
+                self.collect_entries(&entry_path, depth + 1, &new_prefix, false, entries);
+            } else {
+                // Add file entry
+                entries.push(CollectedEntry {
+                    name: entry_name,
+                    path: entry_path,
+                    is_dir: false,
+                    is_last,
+                    prefix: prefix.to_string(),
+                    is_root: false,
+                });
+            }
+        }
+
+        Some(())
     }
 
     fn walk_dir_streaming<O: StreamingOutput>(
@@ -307,7 +662,7 @@ impl StreamingWalker {
             return Ok(None);
         }
 
-        let at_max_depth = self.config.max_depth.map_or(false, |max| depth >= max);
+        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
 
         // Files are handled by their parent directory iteration
         if path.is_file() || !path.is_dir() {
@@ -321,14 +676,14 @@ impl StreamingWalker {
         };
 
         let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         // Filter entries first to know which ones will be included
         let filtered_entries: Vec<_> = entries
             .into_iter()
             .filter(|entry| {
                 let entry_path = entry.path();
-                !self.should_ignore(&entry_path)
+                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
             })
             .collect();
 
@@ -345,7 +700,7 @@ impl StreamingWalker {
 
         // Output this directory (root handled specially)
         if is_root {
-            output.output_node(&name, None, true, true, prefix, true)?;
+            output.output_node(&name, None, true, true, prefix, true, None)?;
         }
 
         let mut dir_count = 0usize;
@@ -353,7 +708,7 @@ impl StreamingWalker {
 
         // We need to peek ahead to know which entries will actually produce output
         // to determine is_last correctly
-        let mut valid_entries: Vec<(std::fs::DirEntry, bool, Option<String>)> = Vec::new();
+        let mut valid_entries: Vec<(std::fs::DirEntry, bool, Option<MetadataBlock>)> = Vec::new();
 
         for entry in filtered_entries {
             let entry_path = entry.path();
@@ -362,18 +717,14 @@ impl StreamingWalker {
                 if self.config.dirs_only {
                     continue;
                 }
-                if !self.should_include(&entry_path) {
+                if !should_include_path(&entry_path, &self.config, &self.filter) {
                     continue;
                 }
-                let comment = if self.config.extract_comments {
-                    extract_first_comment(&entry_path)
-                } else {
-                    None
-                };
-                valid_entries.push((entry, false, comment));
+                let metadata = self.extract_metadata(&entry_path);
+                valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
-                if self.config.dirs_only || self.has_included_files(&entry_path) {
+                if self.config.dirs_only || has_included_files(&entry_path, &self.filter) {
                     valid_entries.push((entry, true, None));
                 }
             }
@@ -381,7 +732,7 @@ impl StreamingWalker {
 
         let total = valid_entries.len();
 
-        for (i, (entry, is_dir, comment)) in valid_entries.into_iter().enumerate() {
+        for (i, (entry, is_dir, metadata)) in valid_entries.into_iter().enumerate() {
             let entry_path = entry.path();
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let is_last = i == total - 1;
@@ -395,7 +746,7 @@ impl StreamingWalker {
             };
 
             if is_dir {
-                output.output_node(&entry_name, None, true, is_last, prefix, false)?;
+                output.output_node(&entry_name, None, true, is_last, prefix, false, None)?;
                 dir_count += 1;
 
                 // Recurse
@@ -406,14 +757,13 @@ impl StreamingWalker {
                     file_count += f;
                 }
             } else {
-                output.output_node(
-                    &entry_name,
-                    comment.as_deref(),
-                    false,
-                    is_last,
-                    prefix,
-                    false,
-                )?;
+                // Get file size if enabled
+                let size = if self.config.show_size {
+                    entry_path.metadata().ok().map(|m| m.len())
+                } else {
+                    None
+                };
+                output.output_node(&entry_name, metadata, false, is_last, prefix, false, size)?;
                 file_count += 1;
             }
         }
@@ -421,44 +771,92 @@ impl StreamingWalker {
         Ok(Some((dir_count, file_count)))
     }
 
-    fn has_included_files(&self, path: &Path) -> bool {
-        if let Some(ref filter) = self.filter {
-            filter.is_included(path)
-        } else {
-            // Without filter, assume directory has content
-            true
+    /// Extract metadata (comments and/or type signatures and/or TODOs) from a file.
+    fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
+        extract_metadata_from_path(
+            path,
+            self.config.extract_comments,
+            self.config.extract_types,
+            self.config.extract_todos,
+        )
+    }
+}
+
+/// Extract metadata from a file path - standalone function for parallel execution.
+/// This is a free function to avoid capturing &StreamingWalker (which contains
+/// non-thread-safe FileFilter) in parallel closures.
+fn extract_metadata_from_path(
+    path: &Path,
+    extract_comments: bool,
+    extract_types: bool,
+    extract_todo_markers: bool,
+) -> Option<MetadataBlock> {
+    let mut block = MetadataBlock::new();
+
+    // Extract comments
+    if extract_comments {
+        if let Some(comment) = extract_first_comment(path) {
+            block.comment_lines = comment
+                .lines()
+                .map(|line| MetadataLine::new(line.to_string()))
+                .collect();
         }
     }
 
-    fn should_include(&self, path: &Path) -> bool {
-        if self.config.show_all {
-            return true;
+    // Extract type signatures
+    if extract_types {
+        if let Some(signatures) = extract_type_signatures(path) {
+            block.type_lines = signatures
+                .into_iter()
+                .map(|(sig, sym, indent)| {
+                    MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+                })
+                .collect();
         }
-        if let Some(ref filter) = self.filter {
-            return filter.is_included(path);
-        }
-        true
     }
 
-    fn should_ignore(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Always ignore .git directory
-        if name == ".git" {
-            return true;
+    // Extract TODO/FIXME markers
+    if extract_todo_markers {
+        if let Some(todos) = extract_todos(path) {
+            block.todo_lines = todos
+                .iter()
+                .map(|todo| {
+                    let content =
+                        format!("{}: {} (line {})", todo.marker_type, todo.text, todo.line);
+                    MetadataLine::with_style(content, LineStyle::Todo)
+                })
+                .collect();
         }
+    }
 
-        // Check custom ignore patterns
-        for pattern in &self.config.ignore_patterns {
-            if name == *pattern || glob_match(pattern, &name) {
-                return true;
-            }
+    if block.is_empty() { None } else { Some(block) }
+}
+
+/// Get file size and return both bytes and human-readable format.
+fn get_file_size(path: &Path) -> (Option<u64>, Option<String>) {
+    match path.metadata() {
+        Ok(meta) => {
+            let size = meta.len();
+            (Some(size), Some(format_size(size)))
         }
+        Err(_) => (None, None),
+    }
+}
 
-        false
+/// Format a size in bytes to human-readable format.
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1}G", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1}M", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1}K", bytes as f64 / KB as f64)
+    } else {
+        format!("{}B", bytes)
     }
 }
 

@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `--size` / `-s` flag to display file sizes (#48)
+  - Shows human-readable sizes (e.g., `1.2K`, `3.5M`) next to filenames
+  - Displayed in green `[size]` brackets in console output
+  - JSON output includes `size_bytes` and `size_human` fields
+  - Markdown output shows size in parentheses: `` `file.txt` (1.2K) ``
+- `--stats` flag to show codebase statistics (#47)
+  - Displays file counts, directory counts, and line counts by language
+  - `--stats --json` outputs statistics as JSON for scripting
+  - `--stats --no-lines` skips line counting for faster output
+  - Language detection based on file extension
+- `--markdown` / `-m` flag for Markdown output format (#46)
+  - Outputs tree as nested markdown list, ideal for documentation and LLM context
+  - Directories shown in bold (`**name/**`), files in code spans (`` `name` ``)
+  - Comments shown inline or as blockquotes in full mode
+  - Supports combining with `-c`, `-t`, `--todos` for metadata
+- `--todos` flag to extract and display TODO/FIXME/HACK/XXX/BUG/NOTE markers from comments (#45)
+  - Shows task markers beneath file entries with line numbers
+  - Combines with `-c` to show both comments and TODOs
+  - JSON output includes `todos` array with `type`, `text`, and `line` fields
+  - Requires colon after marker to reduce false positives (e.g., `// TODO: fix this`)
+- Type signatures in JSON output when using `-t/--types` flag (#29)
+  - `--json -t` now includes a `types` array in each file object
+  - `--json -c -t` includes both `comment` and `types` fields
+  - Maintains consistency between console and JSON output modes
+- `-j/--jobs` flag for parallel metadata extraction (#22)
+  - `-j0` (default): auto-detect CPU count, use all available cores
+  - `-j1`: sequential mode (original behavior)
+  - `-jN`: use N worker threads
+  - Uses rayon for work-stealing parallelism
+  - Output order preserved regardless of parallelism level
+- Indentation hierarchy preserved in type signature display (#25)
+  - Methods and nested items now display indented under their parent types
+  - Source indentation is preserved (tabs normalized to 4 spaces)
+  - Blank lines separate groups (classes with methods are visually distinct)
+  - Makes class/method relationships visible at a glance
+- `--types` / `-t` flag to show exported type signatures (#21)
+  - Extracts public/exported APIs using regex patterns
+  - Supported languages: Rust (`pub fn`, `pub struct`, etc.), TypeScript/JavaScript (`export`), Python (typed functions and classes), Go (capitalized exports)
+  - When `-t` is specified alone, shows types only in full mode (all signatures)
+  - Type signatures display in cyan with **bold red symbol names** for easy scanning
+- `--comments` / `-c` flag to explicitly enable comments
+  - Combine with types: `fruit -c -t` shows comments first, then types
+  - Flag order determines display order: `-t -c` shows types first
+
+- `--prefix` / `-p` flag to specify a custom prefix for metadata lines (#24)
+  - Example: `fruit --prefix "# "` for hash prefix, `fruit -p "// "` for C-style
+- Generic metadata block abstraction for extensible file info display (#19)
+  - `MetadataBlock` and `MetadataLine` types for structured metadata
+  - `MetadataExtractor` trait for pluggable metadata sources
+  - `CommentExtractor` implementation for existing comment extraction
+  - `LineStyle` enum for per-line coloring (enables future type signatures, etc.)
+  - Foundation for future features: type signatures, code structure display
+
+### Changed
+
+- `-t/--types` alone now implies full mode and types-only (no comments unless `-c` added)
+- Metadata display respects flag order with blank line separator between sections (#21)
+  - `-c -t` shows comments first, `-t -c` shows types first
+- Single-line first metadata always displays inline (to the right of filename)
+- Redesigned full comment display (`-f`) to use metadata block pattern (#18)
+  - Comments now appear on separate lines beneath the filename
+  - Each comment line has its own `#` prefix for clarity
+  - Multi-line comments get a visual buffer line for separation
+  - Default mode (inline first-line) unchanged
+- Refactored `OutputConfig` to use `MetadataConfig` for cleaner configuration (#19)
+
 ## [0.2.0] - 2025-12-15
 
 ### Changed

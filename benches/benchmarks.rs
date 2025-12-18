@@ -1,9 +1,11 @@
 //! Performance benchmarks for fruit
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use fruit::{GitFilter, GitignoreFilter, extract_first_comment};
+use fruit::{
+    GitFilter, GitignoreFilter, OutputConfig, StreamingFormatter, StreamingWalker, WalkerConfig,
+    extract_first_comment, test_utils::TestRepo,
+};
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 // Sample source code for benchmarking comment extraction
@@ -63,41 +65,19 @@ public class Main {
 }
 "#;
 
-fn create_test_repo_with_files(file_count: usize) -> TempDir {
-    let dir = TempDir::new().unwrap();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
+/// Create a test repository with the specified number of files.
+fn create_test_repo_with_files(file_count: usize) -> TestRepo {
+    let repo = TestRepo::with_git();
 
     // Create files
     for i in 0..file_count {
-        let file_path = dir.path().join(format!("file_{}.rs", i));
-        fs::write(&file_path, format!("//! File {}\nfn main() {{}}", i)).unwrap();
+        repo.add_file(
+            &format!("file_{}.rs", i),
+            &format!("//! File {}\nfn main() {{}}", i),
+        );
     }
 
-    // Add all files
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    dir
+    repo
 }
 
 fn bench_comment_extraction(c: &mut Criterion) {
@@ -237,6 +217,58 @@ fn bench_gitignore_is_included(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_parallel_extraction(c: &mut Criterion) {
+    // Create a repo with many files for benchmarking
+    let repo = create_test_repo_with_files(200);
+
+    let mut group = c.benchmark_group("parallel_extraction");
+    group.sample_size(20); // Reduce sample size for slower benchmarks
+
+    // Sequential extraction (-j1)
+    group.bench_function("sequential_j1", |b| {
+        b.iter(|| {
+            let config = WalkerConfig {
+                extract_comments: true,
+                parallel_workers: 1, // Sequential
+                ..Default::default()
+            };
+            let walker = StreamingWalker::new(config);
+            let mut formatter = StreamingFormatter::new(OutputConfig::default());
+            let _ = walker.walk_streaming(black_box(repo.path()), &mut formatter);
+        })
+    });
+
+    // Parallel extraction with auto-detect workers (-j0)
+    group.bench_function("parallel_j0_auto", |b| {
+        b.iter(|| {
+            let config = WalkerConfig {
+                extract_comments: true,
+                parallel_workers: 0, // Auto-detect
+                ..Default::default()
+            };
+            let walker = StreamingWalker::new(config);
+            let mut formatter = StreamingFormatter::new(OutputConfig::default());
+            let _ = walker.walk_streaming(black_box(repo.path()), &mut formatter);
+        })
+    });
+
+    // Parallel extraction with 4 workers
+    group.bench_function("parallel_j4", |b| {
+        b.iter(|| {
+            let config = WalkerConfig {
+                extract_comments: true,
+                parallel_workers: 4,
+                ..Default::default()
+            };
+            let walker = StreamingWalker::new(config);
+            let mut formatter = StreamingFormatter::new(OutputConfig::default());
+            let _ = walker.walk_streaming(black_box(repo.path()), &mut formatter);
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_comment_extraction,
@@ -244,5 +276,6 @@ criterion_group!(
     bench_gitignore_filter_init,
     bench_git_is_tracked,
     bench_gitignore_is_included,
+    bench_parallel_extraction,
 );
 criterion_main!(benches);

@@ -1,13 +1,14 @@
 //! CLI entry point for fruit
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use fruit::{
-    GitignoreFilter, OutputConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
-    print_json,
+    CodebaseStats, GitignoreFilter, MarkdownFormatter, MetadataConfig, MetadataOrder, OutputConfig,
+    StatsCollector, StatsConfig, StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig,
+    print_json, print_markdown, print_stats, print_stats_json,
 };
 
 /// Color output mode
@@ -79,28 +80,112 @@ struct Args {
     #[arg(long = "color", value_name = "WHEN", default_value = "auto")]
     color: ColorMode,
 
-    /// Disable comment extraction
-    #[arg(long = "no-comments")]
+    /// Show file comments (enabled by default unless -t is specified)
+    #[arg(short = 'c', long = "comments")]
+    comments: bool,
+
+    /// Disable comment extraction (for backwards compatibility)
+    #[arg(long = "no-comments", conflicts_with = "comments")]
     no_comments: bool,
+
+    /// Show exported type signatures (functions, classes, interfaces, etc.)
+    /// When specified alone, shows only types in full mode
+    #[arg(short = 't', long = "types")]
+    types: bool,
+
+    /// Show TODO/FIXME/HACK/XXX markers from comments
+    /// When specified, extracts task markers and displays them beneath file entries
+    #[arg(long = "todos")]
+    todos: bool,
+
+    /// Show only files containing TODO/FIXME markers (requires --todos)
+    #[arg(long = "todos-only", requires = "todos")]
+    todos_only: bool,
 
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
     wrap: usize,
 
     /// Output in JSON format
-    #[arg(long = "json")]
+    #[arg(long = "json", conflicts_with = "markdown")]
     json: bool,
+
+    /// Output in Markdown format (suitable for documentation and LLM context)
+    #[arg(long = "markdown", short = 'm', conflicts_with = "json")]
+    markdown: bool,
+
+    /// Prefix for metadata lines (e.g., "# " or "// ")
+    #[arg(short = 'p', long = "prefix")]
+    prefix: Option<String>,
+
+    /// Number of parallel workers for metadata extraction
+    /// (0 = auto-detect, 1 = sequential, N = use N workers)
+    #[arg(short = 'j', long = "jobs", default_value = "0")]
+    jobs: usize,
+
+    /// Show codebase statistics (file counts, language breakdown, line counts)
+    #[arg(long = "stats")]
+    stats: bool,
+
+    /// Skip line counting when showing stats (faster)
+    #[arg(long = "no-lines", requires = "stats")]
+    no_lines: bool,
+
+    /// Show file sizes next to filenames
+    #[arg(short = 's', long = "size")]
+    size: bool,
+}
+
+/// Determine metadata order based on which flag appeared first in argv
+fn get_metadata_order(matches: &ArgMatches) -> MetadataOrder {
+    let comments_index = matches.index_of("comments");
+    let types_index = matches.index_of("types");
+
+    match (comments_index, types_index) {
+        (Some(c), Some(t)) if c < t => MetadataOrder::CommentsFirst,
+        (Some(c), Some(t)) if t < c => MetadataOrder::TypesFirst,
+        _ => MetadataOrder::CommentsFirst, // default
+    }
 }
 
 fn main() {
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    let args = Args::from_arg_matches(&matches).unwrap();
+
+    // Determine what metadata to show:
+    // - --no-comments: disable comments (for backwards compatibility)
+    // - If neither -c nor -t nor --todos: show comments (default behavior)
+    // - If only -t: show types only (full mode implied)
+    // - If only -c: show comments
+    // - If only --todos: show todos only
+    // - If both -c and -t: show both
+    // - Any combination with --todos: include todos
+    let (show_comments, show_types) = if args.no_comments {
+        (false, args.types)
+    } else {
+        match (args.comments, args.types, args.todos) {
+            (false, false, false) => (true, false), // default: comments only
+            (false, true, _) => (false, true),      // -t specified: types
+            (true, false, _) => (true, false),      // -c specified: comments
+            (true, true, _) => (true, true),        // both: show both
+            (false, false, true) => (false, false), // --todos alone: no comments/types
+        }
+    };
+    let show_todos = args.todos;
+
+    // When -t or --todos is specified, default to full mode
+    let full_mode = args.full_comment || args.types || args.todos;
 
     let walker_config = WalkerConfig {
         show_all: args.all,
         max_depth: args.level,
         dirs_only: args.dirs_only,
-        extract_comments: !args.no_comments,
+        extract_comments: show_comments,
+        extract_types: show_types,
+        extract_todos: show_todos,
+        show_size: args.size,
         ignore_patterns: args.ignore.clone(),
+        parallel_workers: args.jobs,
     };
 
     let root = if args.path.is_absolute() {
@@ -111,9 +196,21 @@ fn main() {
             .join(&args.path)
     };
 
-    // JSON output requires full tree in memory (for serialization)
-    // Console output uses streaming to reduce memory usage
-    let result = if args.json {
+    // Handle different output modes
+    let result = if args.stats {
+        // Stats mode: collect and display codebase statistics
+        let stats_config = StatsConfig {
+            count_lines: !args.no_lines,
+        };
+        let stats = collect_stats(&root, &args, stats_config);
+
+        if args.json {
+            print_stats_json(&stats)
+        } else {
+            print_stats(&stats, should_use_color(args.color))
+        }
+    } else if args.json {
+        // JSON output requires full tree in memory (for serialization)
         let mut walker = TreeWalker::new(walker_config);
 
         // Set up gitignore filter unless --all is specified
@@ -137,7 +234,7 @@ fn main() {
         };
         print_json(&tree)
     } else {
-        // Use streaming walker for console output - much lower memory usage
+        // Use streaming walker for console/markdown output - much lower memory usage
         let mut walker = StreamingWalker::new(walker_config);
 
         // Set up gitignore filter unless --all is specified
@@ -149,27 +246,55 @@ fn main() {
             }
         }
 
+        let metadata_config = MetadataConfig {
+            comments: show_comments,
+            types: show_types,
+            todos: show_todos,
+            full: full_mode,
+            prefix: args.prefix.clone(),
+            order: get_metadata_order(&matches),
+        };
+
         let output_config = OutputConfig {
-            use_color: should_use_color(args.color),
-            show_full_comment: args.full_comment,
+            use_color: if args.markdown {
+                false
+            } else {
+                should_use_color(args.color)
+            },
+            metadata: metadata_config,
             wrap_width: if args.wrap == 0 {
                 None
             } else {
                 Some(args.wrap)
             },
         };
-        let mut formatter = StreamingFormatter::new(output_config);
 
-        match walker.walk_streaming(&root, &mut formatter) {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => {
-                eprintln!(
-                    "fruit: cannot access '{}': No such file or directory",
-                    args.path.display()
-                );
-                process::exit(1);
+        if args.markdown {
+            let mut formatter = MarkdownFormatter::new(output_config);
+            match walker.walk_streaming(&root, &mut formatter) {
+                Ok(Some(_)) => print_markdown(&formatter),
+                Ok(None) => {
+                    eprintln!(
+                        "fruit: cannot access '{}': No such file or directory",
+                        args.path.display()
+                    );
+                    process::exit(1);
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
+        } else {
+            let mut formatter = StreamingFormatter::new(output_config);
+            match walker.walk_streaming(&root, &mut formatter) {
+                Ok(Some(_)) => Ok(()),
+                Ok(None) => {
+                    eprintln!(
+                        "fruit: cannot access '{}': No such file or directory",
+                        args.path.display()
+                    );
+                    process::exit(1);
+                }
+                Err(e) => Err(e),
+            }
         }
     };
 
@@ -177,4 +302,46 @@ fn main() {
         eprintln!("fruit: error writing output: {}", e);
         process::exit(1);
     }
+}
+
+/// Collect codebase statistics by walking the directory tree.
+fn collect_stats(root: &Path, args: &Args, stats_config: StatsConfig) -> CodebaseStats {
+    use ignore::WalkBuilder;
+
+    let mut collector = StatsCollector::new(stats_config);
+
+    let walker = if args.all {
+        WalkBuilder::new(root)
+            .hidden(false)
+            .ignore(false)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .build()
+    } else {
+        WalkBuilder::new(root)
+            .hidden(true)
+            .ignore(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build()
+    };
+
+    for entry in walker.flatten() {
+        let path = entry.path();
+
+        // Skip the root directory itself
+        if path == root {
+            continue;
+        }
+
+        if path.is_dir() {
+            collector.record_directory();
+        } else if path.is_file() {
+            collector.record_file(path);
+        }
+    }
+
+    collector.finalize()
 }

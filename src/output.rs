@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
+use crate::metadata::{MetadataBlock, MetadataConfig};
 use crate::tree::{StreamingOutput, TreeNode};
 
 /// Print tree node as pretty-printed JSON to stdout.
@@ -15,18 +16,71 @@ pub fn print_json(node: &TreeNode) -> io::Result<()> {
 
 const DEFAULT_WRAP_WIDTH: usize = 100;
 
+/// Calculate the continuation prefix for lines below the filename.
+/// Used by both TreeFormatter and StreamingFormatter.
+fn continuation_prefix(prefix: &str, is_last: bool) -> String {
+    if is_last {
+        format!("{}    ", prefix)
+    } else {
+        format!("{}│   ", prefix)
+    }
+}
+
+/// Calculate the available width for text wrapping after accounting for prefixes.
+/// Returns None if wrapping is disabled or the available width is too small.
+fn calculate_wrap_width(
+    base_wrap_width: Option<usize>,
+    continuation_prefix_len: usize,
+    meta_prefix_len: usize,
+) -> Option<usize> {
+    base_wrap_width
+        .map(|w| w.saturating_sub(continuation_prefix_len + meta_prefix_len))
+        .filter(|&w| w > 10)
+}
+
+/// Check if the next non-empty line in a slice is indented relative to current indent.
+fn has_indented_children(lines: &[&crate::metadata::MetadataLine], current_indent: usize) -> bool {
+    lines
+        .iter()
+        .find(|l| !l.content.trim().is_empty())
+        .is_some_and(|next| next.indent > current_indent)
+}
+
+/// Determine if a blank line should be inserted before a baseline item.
+/// Returns true when returning to baseline after indented content or when
+/// this baseline item has indented children (it's a group header).
+fn should_insert_group_separator(
+    current_indent: usize,
+    prev_indent: Option<usize>,
+    has_children: bool,
+) -> bool {
+    if current_indent != 0 {
+        return false;
+    }
+    let dominated_previous = prev_indent.is_some_and(|p| p > 0);
+    (dominated_previous || has_children) && prev_indent.is_some()
+}
+
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
     pub use_color: bool,
-    pub show_full_comment: bool,
+    /// Metadata display configuration
+    pub metadata: MetadataConfig,
     pub wrap_width: Option<usize>,
+}
+
+impl OutputConfig {
+    /// Check if full metadata blocks should be shown (vs first line only).
+    pub fn show_full(&self) -> bool {
+        self.metadata.full
+    }
 }
 
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             use_color: true,
-            show_full_comment: false,
+            metadata: MetadataConfig::comments_only(false),
             wrap_width: Some(DEFAULT_WRAP_WIDTH),
         }
     }
@@ -64,6 +118,177 @@ impl TreeFormatter {
         Ok(())
     }
 
+    /// Print a metadata block with colors to stdout.
+    fn print_metadata_block(
+        &self,
+        stdout: &mut StandardStream,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) -> io::Result<()> {
+        if block.is_empty() {
+            writeln!(stdout)?;
+            return Ok(());
+        }
+
+        let meta_prefix = self.config.metadata.prefix_str();
+        let order = self.config.metadata.order;
+        let lines = block.lines_in_order(order);
+
+        // Not in full mode: show first line inline only
+        if !self.config.show_full() {
+            if let Some(first) = block.first_line(order) {
+                write!(stdout, "  {}", meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    stdout,
+                    first_line(&first.content),
+                    first.symbol_name.as_deref(),
+                    first.style.color(),
+                    first.style.is_intense(),
+                    first.indent,
+                )?;
+            }
+            writeln!(stdout)?;
+            stdout.reset()?;
+            return Ok(());
+        }
+
+        // Full mode: display in a block beneath filename
+        writeln!(stdout)?; // End the filename line
+
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            self.config.wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
+
+        // Blank line before block
+        stdout.reset()?;
+        writeln!(stdout, "{}", cont_prefix)?;
+
+        // Metadata lines with per-line styling
+        let line_refs: Vec<_> = lines.iter().collect();
+        let mut prev_indent: Option<usize> = None;
+        for (i, meta_line) in lines.iter().enumerate() {
+            let content = meta_line.content.trim();
+
+            // Empty line is a separator
+            if content.is_empty() {
+                stdout.reset()?;
+                writeln!(stdout, "{}", cont_prefix)?;
+                prev_indent = None; // Reset indent tracking after separator
+                continue;
+            }
+
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&line_refs[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                stdout.reset()?;
+                writeln!(stdout, "{}", cont_prefix)?;
+            }
+            prev_indent = Some(meta_line.indent);
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped.iter() {
+                stdout.reset()?;
+                write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    stdout,
+                    wrapped_line,
+                    meta_line.symbol_name.as_deref(),
+                    meta_line.style.color(),
+                    meta_line.style.is_intense(),
+                    meta_line.indent,
+                )?;
+                writeln!(stdout)?;
+            }
+        }
+
+        // Blank line after block
+        stdout.reset()?;
+        writeln!(stdout, "{}", cont_prefix)?;
+        stdout.reset()?;
+        Ok(())
+    }
+
+    /// Format a metadata block to plain text output.
+    fn format_metadata_block_plain(
+        &self,
+        output: &mut String,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) {
+        if block.is_empty() {
+            output.push('\n');
+            return;
+        }
+
+        let meta_prefix = self.config.metadata.prefix_str();
+        let order = self.config.metadata.order;
+        let lines = block.lines_in_order(order);
+
+        // Not in full mode: show first line inline only
+        if !self.config.show_full() {
+            if let Some(first) = block.first_line(order) {
+                output.push_str("  ");
+                output.push_str(meta_prefix);
+                output.push_str(first_line(&first.content));
+            }
+            output.push('\n');
+            return;
+        }
+
+        // Full mode: display in a block beneath filename
+        output.push('\n'); // End the filename line
+
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            self.config.wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
+
+        // Blank line before block
+        output.push_str(&cont_prefix);
+        output.push('\n');
+
+        // Metadata lines
+        for line in &lines {
+            let content = line.content.trim();
+
+            // Empty line is a separator
+            if content.is_empty() {
+                output.push_str(&cont_prefix);
+                output.push('\n');
+                continue;
+            }
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped.iter() {
+                output.push_str(&cont_prefix);
+                output.push_str(meta_prefix);
+                output.push_str(wrapped_line);
+                output.push('\n');
+            }
+        }
+
+        // Blank line after block
+        output.push_str(&cont_prefix);
+        output.push('\n');
+    }
+
     fn format_node(
         &self,
         node: &TreeNode,
@@ -80,60 +305,9 @@ impl TreeFormatter {
                 output.push_str(connector);
                 output.push_str(name);
                 if let Some(c) = comment {
-                    if self.config.show_full_comment {
-                        // Calculate padding for continuation lines
-                        let continuation_prefix = if is_last {
-                            format!("{}    ", prefix)
-                        } else {
-                            format!("{}│   ", prefix)
-                        };
-                        let padding_len = name.len() + 4; // "  # " align with text start
-                        let padding = " ".repeat(padding_len);
-
-                        // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count() + padding_len;
-                        let wrap_width = self
-                            .config
-                            .wrap_width
-                            .map(|w| w.saturating_sub(prefix_width))
-                            .filter(|&w| w > 10);
-
-                        let comment = c.trim();
-                        let has_multiple_lines = comment.contains('\n');
-
-                        let mut first_line_done = false;
-                        for line in comment.lines() {
-                            let wrapped = if let Some(width) = wrap_width {
-                                wrap_text(line, width)
-                            } else {
-                                vec![line.to_string()]
-                            };
-
-                            for (i, wrapped_line) in wrapped.iter().enumerate() {
-                                if !first_line_done && i == 0 {
-                                    output.push_str("  # ");
-                                    output.push_str(wrapped_line);
-                                    output.push('\n');
-                                    first_line_done = true;
-                                } else {
-                                    output.push_str(&continuation_prefix);
-                                    output.push_str(&padding);
-                                    output.push_str(wrapped_line);
-                                    output.push('\n');
-                                }
-                            }
-                        }
-
-                        // Add blank line after multiline comments
-                        if has_multiple_lines {
-                            output.push_str(&continuation_prefix);
-                            output.push('\n');
-                        }
-                    } else {
-                        output.push_str("  # ");
-                        output.push_str(first_line(c));
-                        output.push('\n');
-                    }
+                    // Convert comment to metadata block for unified handling
+                    let block = MetadataBlock::from_comments(c);
+                    self.format_metadata_block_plain(output, &block, prefix, is_last);
                 } else {
                     output.push('\n');
                 }
@@ -195,66 +369,9 @@ impl TreeFormatter {
                 stdout.reset()?;
 
                 if let Some(c) = comment {
-                    stdout.set_color(
-                        ColorSpec::new()
-                            .set_fg(Some(Color::Black))
-                            .set_intense(true),
-                    )?;
-                    if self.config.show_full_comment {
-                        // Calculate padding for continuation lines
-                        let continuation_prefix = if is_last {
-                            format!("{}    ", prefix)
-                        } else {
-                            format!("{}│   ", prefix)
-                        };
-                        let padding_len = name.len() + 4; // "  # " align with text start
-                        let padding = " ".repeat(padding_len);
-
-                        // Calculate available width for text wrapping
-                        let prefix_width = continuation_prefix.chars().count() + padding_len;
-                        let wrap_width = self
-                            .config
-                            .wrap_width
-                            .map(|w| w.saturating_sub(prefix_width))
-                            .filter(|&w| w > 10); // Don't wrap if too narrow
-
-                        let comment = c.trim();
-                        let has_multiple_lines = comment.contains('\n');
-
-                        let mut first_line_done = false;
-                        for line in comment.lines() {
-                            let wrapped = if let Some(width) = wrap_width {
-                                wrap_text(line, width)
-                            } else {
-                                vec![line.to_string()]
-                            };
-
-                            for (i, wrapped_line) in wrapped.iter().enumerate() {
-                                if !first_line_done && i == 0 {
-                                    writeln!(stdout, "  # {}", wrapped_line)?;
-                                    first_line_done = true;
-                                } else {
-                                    stdout.reset()?;
-                                    write!(stdout, "{}", continuation_prefix)?;
-                                    stdout.set_color(
-                                        ColorSpec::new()
-                                            .set_fg(Some(Color::Black))
-                                            .set_intense(true),
-                                    )?;
-                                    writeln!(stdout, "{}{}", padding, wrapped_line)?;
-                                }
-                            }
-                        }
-
-                        // Add blank line after multiline comments for readability
-                        if has_multiple_lines {
-                            stdout.reset()?;
-                            writeln!(stdout, "{}", continuation_prefix)?;
-                        }
-                    } else {
-                        writeln!(stdout, "  # {}", first_line(c))?;
-                    }
-                    stdout.reset()?;
+                    // Convert comment to metadata block for unified handling
+                    let block = MetadataBlock::from_comments(c);
+                    self.print_metadata_block(stdout, &block, prefix, is_last)?;
                 } else {
                     writeln!(stdout)?;
                 }
@@ -305,6 +422,70 @@ fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
 }
 
+/// Write a metadata line, highlighting the symbol name in bold red if present.
+/// The `indent` parameter specifies the number of spaces to prepend for hierarchy display.
+fn write_metadata_line_with_symbol(
+    stdout: &mut StandardStream,
+    content: &str,
+    symbol_name: Option<&str>,
+    base_color: Color,
+    is_intense: bool,
+    indent: usize,
+) -> io::Result<()> {
+    // Write indentation spaces
+    if indent > 0 {
+        write!(stdout, "{:indent$}", "", indent = indent)?;
+    }
+
+    if let Some(sym) = symbol_name {
+        // Find the symbol in the content and highlight it
+        if let Some(pos) = content.find(sym) {
+            // Write part before symbol
+            let before = &content[..pos];
+            if !before.is_empty() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(base_color))
+                        .set_intense(is_intense),
+                )?;
+                write!(stdout, "{}", before)?;
+            }
+
+            // Write symbol in bold red
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+            write!(stdout, "{}", sym)?;
+
+            // Write part after symbol
+            let after = &content[pos + sym.len()..];
+            if !after.is_empty() {
+                stdout.set_color(
+                    ColorSpec::new()
+                        .set_fg(Some(base_color))
+                        .set_intense(is_intense),
+                )?;
+                write!(stdout, "{}", after)?;
+            }
+        } else {
+            // Symbol not found in content, just write normally
+            stdout.set_color(
+                ColorSpec::new()
+                    .set_fg(Some(base_color))
+                    .set_intense(is_intense),
+            )?;
+            write!(stdout, "{}", content)?;
+        }
+    } else {
+        // No symbol to highlight
+        stdout.set_color(
+            ColorSpec::new()
+                .set_fg(Some(base_color))
+                .set_intense(is_intense),
+        )?;
+        write!(stdout, "{}", content)?;
+    }
+    Ok(())
+}
+
 /// Streaming output formatter - outputs directly to stdout without buffering.
 /// Implements the StreamingOutput trait for use with StreamingWalker.
 pub struct StreamingFormatter {
@@ -324,17 +505,176 @@ impl StreamingFormatter {
             stdout: StandardStream::stdout(choice),
         }
     }
+
+    /// Write inline metadata (first line only, on same line as filename).
+    fn write_inline_metadata(
+        &mut self,
+        meta_prefix: &str,
+        first: &crate::metadata::MetadataLine,
+    ) -> io::Result<()> {
+        write!(self.stdout, "  {}", meta_prefix)?;
+        write_metadata_line_with_symbol(
+            &mut self.stdout,
+            first_line(&first.content),
+            first.symbol_name.as_deref(),
+            first.style.color(),
+            first.style.is_intense(),
+            first.indent,
+        )?;
+        writeln!(self.stdout)?;
+        self.stdout.reset()?;
+        Ok(())
+    }
+
+    /// Print metadata lines in a block format with proper indentation and group separators.
+    fn print_metadata_lines_block(
+        &mut self,
+        lines: &[&crate::metadata::MetadataLine],
+        cont_prefix: &str,
+        meta_prefix: &str,
+        wrap_width: Option<usize>,
+    ) -> io::Result<()> {
+        // Blank line before block
+        self.stdout.reset()?;
+        writeln!(self.stdout, "{}", cont_prefix)?;
+
+        let mut prev_indent: Option<usize> = None;
+        for (i, meta_line) in lines.iter().enumerate() {
+            let content = meta_line.content.trim();
+
+            // Empty line is a separator between sections
+            if content.is_empty() {
+                self.stdout.reset()?;
+                writeln!(self.stdout, "{}", cont_prefix)?;
+                prev_indent = None;
+                continue;
+            }
+
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&lines[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                self.stdout.reset()?;
+                writeln!(self.stdout, "{}", cont_prefix)?;
+            }
+            prev_indent = Some(meta_line.indent);
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped.iter() {
+                self.stdout.reset()?;
+                write!(self.stdout, "{}{}", cont_prefix, meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    &mut self.stdout,
+                    wrapped_line,
+                    meta_line.symbol_name.as_deref(),
+                    meta_line.style.color(),
+                    meta_line.style.is_intense(),
+                    meta_line.indent,
+                )?;
+                writeln!(self.stdout)?;
+            }
+        }
+
+        // Blank line after block
+        self.stdout.reset()?;
+        writeln!(self.stdout, "{}", cont_prefix)?;
+        Ok(())
+    }
+
+    /// Print a metadata block with colors to stdout.
+    fn print_metadata_block(
+        &mut self,
+        block: &MetadataBlock,
+        prefix: &str,
+        is_last: bool,
+    ) -> io::Result<()> {
+        if block.is_empty() {
+            writeln!(self.stdout)?;
+            return Ok(());
+        }
+
+        // Copy config values to avoid borrow conflicts
+        let meta_prefix = self.config.metadata.prefix_str().to_string();
+        let order = self.config.metadata.order;
+        let base_wrap_width = self.config.wrap_width;
+        let show_full = self.config.show_full();
+
+        // Check if the first section (based on order) is a single line
+        let first_is_single = block.first_section_is_single_line(order);
+        let total_lines = block.total_lines();
+
+        // Not in full mode: show first line inline only
+        if !show_full {
+            if let Some(first) = block.first_line(order) {
+                self.write_inline_metadata(&meta_prefix, first)?;
+            } else {
+                writeln!(self.stdout)?;
+            }
+            return Ok(());
+        }
+
+        // Full mode: show all metadata
+        let lines = block.lines_in_order(order);
+
+        // If total is just 1 line, show inline
+        if total_lines == 1 {
+            if let Some(first) = block.first_line(order) {
+                self.write_inline_metadata(&meta_prefix, first)?;
+            } else {
+                writeln!(self.stdout)?;
+            }
+            return Ok(());
+        }
+
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            base_wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
+
+        // If first section is single line and there's more content, show first inline then rest below
+        if first_is_single {
+            if let Some(first) = block.first_line(order) {
+                self.write_inline_metadata(&meta_prefix, first)?;
+            }
+
+            // Skip the first line (already shown inline) and the separator after it
+            let skip_count = if block.has_both() { 2 } else { 1 };
+            let remaining_lines: Vec<_> = lines.iter().skip(skip_count).collect();
+            self.print_metadata_lines_block(
+                &remaining_lines,
+                &cont_prefix,
+                &meta_prefix,
+                wrap_width,
+            )?;
+        } else {
+            // First section has multiple lines, show everything below
+            writeln!(self.stdout)?; // End the filename line
+
+            let line_refs: Vec<_> = lines.iter().collect();
+            self.print_metadata_lines_block(&line_refs, &cont_prefix, &meta_prefix, wrap_width)?;
+        }
+
+        self.stdout.reset()?;
+        Ok(())
+    }
 }
 
 impl StreamingOutput for StreamingFormatter {
     fn output_node(
         &mut self,
         name: &str,
-        comment: Option<&str>,
+        metadata: Option<MetadataBlock>,
         is_dir: bool,
         is_last: bool,
         prefix: &str,
         is_root: bool,
+        size: Option<u64>,
     ) -> io::Result<()> {
         let connector = if is_last { "└── " } else { "├── " };
 
@@ -359,67 +699,17 @@ impl StreamingOutput for StreamingFormatter {
             write!(self.stdout, "{}", name)?;
             self.stdout.reset()?;
 
-            if let Some(c) = comment {
-                self.stdout.set_color(
-                    ColorSpec::new()
-                        .set_fg(Some(Color::Black))
-                        .set_intense(true),
-                )?;
-                if self.config.show_full_comment {
-                    // Calculate padding for continuation lines
-                    let continuation_prefix = if is_last {
-                        format!("{}    ", prefix)
-                    } else {
-                        format!("{}│   ", prefix)
-                    };
-                    let padding_len = name.len() + 4; // "  # " align with text start
-                    let padding = " ".repeat(padding_len);
-
-                    // Calculate available width for text wrapping
-                    let prefix_width = continuation_prefix.chars().count() + padding_len;
-                    let wrap_width = self
-                        .config
-                        .wrap_width
-                        .map(|w| w.saturating_sub(prefix_width))
-                        .filter(|&w| w > 10);
-
-                    let comment = c.trim();
-                    let has_multiple_lines = comment.contains('\n');
-
-                    let mut first_line_done = false;
-                    for line in comment.lines() {
-                        let wrapped = if let Some(width) = wrap_width {
-                            wrap_text(line, width)
-                        } else {
-                            vec![line.to_string()]
-                        };
-
-                        for (i, wrapped_line) in wrapped.iter().enumerate() {
-                            if !first_line_done && i == 0 {
-                                writeln!(self.stdout, "  # {}", wrapped_line)?;
-                                first_line_done = true;
-                            } else {
-                                self.stdout.reset()?;
-                                write!(self.stdout, "{}", continuation_prefix)?;
-                                self.stdout.set_color(
-                                    ColorSpec::new()
-                                        .set_fg(Some(Color::Black))
-                                        .set_intense(true),
-                                )?;
-                                writeln!(self.stdout, "{}{}", padding, wrapped_line)?;
-                            }
-                        }
-                    }
-
-                    // Add blank line after multiline comments for readability
-                    if has_multiple_lines {
-                        self.stdout.reset()?;
-                        writeln!(self.stdout, "{}", continuation_prefix)?;
-                    }
-                } else {
-                    writeln!(self.stdout, "  # {}", first_line(c))?;
-                }
+            // Show file size if provided
+            if let Some(bytes) = size {
+                write!(self.stdout, "  ")?;
+                self.stdout
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                write!(self.stdout, "[{}]", crate::tree::format_size(bytes))?;
                 self.stdout.reset()?;
+            }
+
+            if let Some(block) = metadata {
+                self.print_metadata_block(&block, prefix, is_last)?;
             } else {
                 writeln!(self.stdout)?;
             }
@@ -511,6 +801,137 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
+/// Markdown output formatter - outputs tree as nested markdown list.
+/// Implements the StreamingOutput trait for use with StreamingWalker.
+pub struct MarkdownFormatter {
+    config: OutputConfig,
+    output: String,
+}
+
+impl MarkdownFormatter {
+    pub fn new(config: OutputConfig) -> Self {
+        Self {
+            config,
+            output: String::new(),
+        }
+    }
+
+    /// Get the formatted output string.
+    pub fn output(&self) -> &str {
+        &self.output
+    }
+
+    /// Take ownership of the output string.
+    pub fn into_output(self) -> String {
+        self.output
+    }
+}
+
+impl StreamingOutput for MarkdownFormatter {
+    fn output_node(
+        &mut self,
+        name: &str,
+        metadata: Option<MetadataBlock>,
+        is_dir: bool,
+        _is_last: bool,
+        prefix: &str,
+        is_root: bool,
+        size: Option<u64>,
+    ) -> io::Result<()> {
+        // Calculate indentation level from prefix length
+        // Each level is 2 spaces in markdown list format
+        let indent_level = if is_root { 0 } else { (prefix.len() / 4) + 1 };
+        let indent = "  ".repeat(indent_level);
+
+        if is_dir {
+            // Directories in bold
+            self.output.push_str(&indent);
+            self.output.push_str("- **");
+            self.output.push_str(name);
+            self.output.push_str("/**\n");
+        } else {
+            // Files with optional metadata
+            self.output.push_str(&indent);
+            self.output.push_str("- `");
+            self.output.push_str(name);
+            self.output.push('`');
+
+            // Show file size if provided
+            if let Some(bytes) = size {
+                self.output.push_str(" (");
+                self.output.push_str(&crate::tree::format_size(bytes));
+                self.output.push(')');
+            }
+
+            // Add metadata if present
+            if let Some(ref block) = metadata {
+                if !block.is_empty() {
+                    let order = self.config.metadata.order;
+
+                    if !self.config.show_full() {
+                        // Inline mode: show first line after filename
+                        if let Some(first) = block.first_line(order) {
+                            self.output.push_str(" - ");
+                            self.output.push_str(first_line(&first.content));
+                        }
+                    } else {
+                        // Full mode: show first line inline, rest as nested content
+                        if let Some(first) = block.first_line(order) {
+                            self.output.push_str(" - ");
+                            self.output.push_str(first_line(&first.content));
+                        }
+
+                        // If there's more than one line, show the rest as a nested block
+                        let lines = block.lines_in_order(order);
+                        if lines.len() > 1 {
+                            self.output.push('\n');
+                            let nested_indent = "  ".repeat(indent_level + 1);
+                            self.output.push_str(&nested_indent);
+                            self.output.push('\n');
+                            self.output.push_str(&nested_indent);
+                            self.output.push_str("> ");
+
+                            // Skip the first line (already shown inline) and format the rest
+                            let remaining: Vec<_> = lines
+                                .iter()
+                                .skip(1)
+                                .filter(|l| !l.content.trim().is_empty())
+                                .collect();
+
+                            for (i, line) in remaining.iter().enumerate() {
+                                if i > 0 {
+                                    self.output.push('\n');
+                                    self.output.push_str(&nested_indent);
+                                    self.output.push_str("> ");
+                                }
+                                self.output.push_str(line.content.trim());
+                            }
+                            self.output.push('\n');
+                        }
+                    }
+                }
+            }
+            self.output.push('\n');
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, dir_count: usize, file_count: usize) -> io::Result<()> {
+        self.output.push('\n');
+        self.output.push_str(&format!(
+            "*{} directories, {} files*\n",
+            dir_count, file_count
+        ));
+        Ok(())
+    }
+}
+
+/// Print markdown output to stdout.
+pub fn print_markdown(formatter: &MarkdownFormatter) -> io::Result<()> {
+    print!("{}", formatter.output());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,6 +945,10 @@ mod tests {
                     name: "Cargo.toml".to_string(),
                     path: "Cargo.toml".into(),
                     comment: Some("Package manifest".to_string()),
+                    types: None,
+                    todos: None,
+                    size_bytes: None,
+                    size_human: None,
                 },
                 TreeNode::Dir {
                     name: "src".to_string(),
@@ -533,11 +958,19 @@ mod tests {
                             name: "main.rs".to_string(),
                             path: "src/main.rs".into(),
                             comment: Some("CLI entry point".to_string()),
+                            types: None,
+                            todos: None,
+                            size_bytes: None,
+                            size_human: None,
                         },
                         TreeNode::File {
                             name: "lib.rs".to_string(),
                             path: "src/lib.rs".into(),
                             comment: None,
+                            types: None,
+                            todos: None,
+                            size_bytes: None,
+                            size_human: None,
                         },
                     ],
                 },
@@ -550,14 +983,14 @@ mod tests {
         let tree = sample_tree();
         let formatter = TreeFormatter::new(OutputConfig {
             use_color: false,
-            show_full_comment: false,
+            metadata: MetadataConfig::comments_only(false),
             wrap_width: None,
         });
         let output = formatter.format(&tree);
 
         assert!(output.contains("."));
         assert!(output.contains("├── Cargo.toml"));
-        assert!(output.contains("# Package manifest"));
+        assert!(output.contains("Package manifest"));
         assert!(output.contains("└── src"));
         assert!(output.contains("├── main.rs"));
         assert!(output.contains("└── lib.rs"));
@@ -591,5 +1024,276 @@ mod tests {
         let mixed = "Hello 世界 🎉";
         let wrapped = wrap_text(mixed, 8);
         assert_eq!(wrapped, vec!["Hello 世界", "🎉"]);
+    }
+
+    // ==================== Metadata Block Display Tests ====================
+
+    #[test]
+    fn test_metadata_block_inline_display_single_line() {
+        // When not in full mode, only the first line should show inline
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("Single line comment".to_string()),
+            types: None,
+            todos: None,
+            size_bytes: None,
+            size_human: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false), // full = false
+            wrap_width: None,
+        });
+
+        // Wrap in a directory so format_node runs properly
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have comment inline on same line as filename
+        assert!(
+            output.contains("test.rs  Single line comment"),
+            "Expected inline metadata, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_inline_display_multiline_comment_first_only() {
+        // When not in full mode, multiline comments should only show first line
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("First line\nSecond line\nThird line".to_string()),
+            types: None,
+            todos: None,
+            size_bytes: None,
+            size_human: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false), // full = false
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should only have first line inline
+        assert!(
+            output.contains("test.rs  First line"),
+            "Expected first line inline, got: {}",
+            output
+        );
+        // Should NOT contain other lines
+        assert!(
+            !output.contains("Second line"),
+            "Should not contain second line, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_multiline_display() {
+        // When in full mode, all lines should appear in block format
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("First line\nSecond line\nThird line".to_string()),
+            types: None,
+            todos: None,
+            size_bytes: None,
+            size_human: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(true), // full = true
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have all lines in output
+        assert!(
+            output.contains("First line"),
+            "Expected first line, got: {}",
+            output
+        );
+        assert!(
+            output.contains("Second line"),
+            "Expected second line, got: {}",
+            output
+        );
+        assert!(
+            output.contains("Third line"),
+            "Expected third line, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_with_custom_prefix() {
+        // Test that custom prefix is applied to metadata lines
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: Some("Comment text".to_string()),
+            types: None,
+            todos: None,
+            size_bytes: None,
+            size_human: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(false).with_prefix("# "),
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Should have prefix before comment
+        assert!(
+            output.contains("# Comment text"),
+            "Expected prefix '# ' before comment, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_metadata_block_empty_displays_no_extra_content() {
+        // When comment is None, no metadata should appear
+        let tree = TreeNode::File {
+            name: "test.rs".to_string(),
+            path: "test.rs".into(),
+            comment: None,
+            types: None,
+            todos: None,
+            size_bytes: None,
+            size_human: None,
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::comments_only(true),
+            wrap_width: None,
+        });
+
+        let root = TreeNode::Dir {
+            name: ".".to_string(),
+            path: ".".into(),
+            children: vec![tree],
+        };
+        let output = formatter.format(&root);
+
+        // Line should just be the filename
+        let lines: Vec<&str> = output.lines().collect();
+        // Find the line with test.rs
+        let test_line = lines.iter().find(|l| l.contains("test.rs")).unwrap();
+        // Should end with "test.rs" (possibly with tree connector)
+        assert!(
+            test_line.trim().ends_with("test.rs"),
+            "Expected line to end with just filename, got: {}",
+            test_line
+        );
+    }
+
+    // ==================== Helper Function Tests ====================
+
+    #[test]
+    fn test_continuation_prefix_last_item() {
+        let prefix = continuation_prefix("", true);
+        assert_eq!(prefix, "    "); // 4 spaces for last item
+
+        let prefix = continuation_prefix("│   ", true);
+        assert_eq!(prefix, "│       "); // parent prefix + 4 spaces
+    }
+
+    #[test]
+    fn test_continuation_prefix_not_last_item() {
+        let prefix = continuation_prefix("", false);
+        assert_eq!(prefix, "│   "); // vertical line + 3 spaces
+
+        let prefix = continuation_prefix("│   ", false);
+        assert_eq!(prefix, "│   │   "); // parent prefix + vertical + 3 spaces
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_enabled() {
+        // With base width of 100, should subtract prefixes
+        let width = calculate_wrap_width(Some(100), 4, 2);
+        assert_eq!(width, Some(94)); // 100 - 4 - 2 = 94
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_disabled() {
+        // When wrap_width is None, should return None
+        let width = calculate_wrap_width(None, 4, 2);
+        assert!(width.is_none());
+    }
+
+    #[test]
+    fn test_calculate_wrap_width_too_small() {
+        // When resulting width is <= 10, should return None
+        let width = calculate_wrap_width(Some(15), 10, 4);
+        assert!(width.is_none()); // 15 - 10 - 4 = 1, which is <= 10
+    }
+
+    #[test]
+    fn test_first_line_extracts_first() {
+        assert_eq!(first_line("first\nsecond\nthird"), "first");
+        assert_eq!(first_line("only one"), "only one");
+        assert_eq!(first_line(""), "");
+    }
+
+    #[test]
+    fn test_wrap_text_empty() {
+        let wrapped = wrap_text("", 50);
+        assert_eq!(wrapped, vec![""]);
+    }
+
+    #[test]
+    fn test_wrap_text_zero_width() {
+        // Zero width should return original text
+        let wrapped = wrap_text("some text", 0);
+        assert_eq!(wrapped, vec!["some text"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long_word() {
+        // Word longer than max_width should be character-wrapped
+        let wrapped = wrap_text("supercalifragilisticexpialidocious", 10);
+        assert_eq!(wrapped.len(), 4);
+        assert_eq!(wrapped[0], "supercalif");
+        assert_eq!(wrapped[1], "ragilistic");
+        assert_eq!(wrapped[2], "expialidoc");
+        assert_eq!(wrapped[3], "ious");
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_word_boundaries() {
+        let wrapped = wrap_text("hello world foo bar", 11);
+        assert_eq!(wrapped, vec!["hello world", "foo bar"]);
     }
 }
