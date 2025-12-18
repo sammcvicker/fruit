@@ -124,7 +124,12 @@ fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
         }
 
         if let Some(caps) = pattern.captures(line) {
-            let marker_type = caps.get(1).map(|m| m.as_str().to_uppercase()).unwrap();
+            // Group 1 contains the marker type (TODO, FIXME, etc.)
+            // Group 2 contains the text after the colon
+            let marker_type = caps
+                .get(1)
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "TODO".to_string());
             let text = caps
                 .get(2)
                 .map(|m| m.as_str().trim().to_string())
