@@ -153,46 +153,16 @@ struct Args {
 }
 
 /// Parse a duration string like "1h", "7d", "2w" into a Duration.
-/// Supports: s (seconds), m (minutes), h (hours), d (days), w (weeks), M (months), y (years)
+/// Uses the humantime crate which supports:
+/// - Seconds: s, sec, secs, second, seconds
+/// - Minutes: m, min, mins, minute, minutes
+/// - Hours: h, hr, hrs, hour, hours
+/// - Days: d, day, days
+/// - Weeks: w, wk, wks, week, weeks
+/// - Months: M, month, months (30.44 days)
+/// - Years: y, yr, yrs, year, years (365.25 days)
 fn parse_duration_string(s: &str) -> Result<Duration, String> {
-    // Try humantime first for standard durations
-    if let Ok(d) = humantime::parse_duration(s) {
-        return Ok(d);
-    }
-
-    // Parse our custom short format: 1h, 7d, 2w, 3M, 1y
-    let s = s.trim();
-    if s.is_empty() {
-        return Err("empty duration".to_string());
-    }
-
-    // Find where the number ends and unit begins
-    let num_end = s
-        .chars()
-        .position(|c| !c.is_ascii_digit())
-        .unwrap_or(s.len());
-
-    if num_end == 0 || num_end == s.len() {
-        return Err(format!("invalid duration format: {}", s));
-    }
-
-    let num: u64 = s[..num_end]
-        .parse()
-        .map_err(|_| format!("invalid number in duration: {}", s))?;
-    let unit = &s[num_end..];
-
-    let seconds = match unit {
-        "s" | "sec" | "secs" | "second" | "seconds" => num,
-        "m" | "min" | "mins" | "minute" | "minutes" => num * 60,
-        "h" | "hr" | "hrs" | "hour" | "hours" => num * 3600,
-        "d" | "day" | "days" => num * 86400,
-        "w" | "wk" | "wks" | "week" | "weeks" => num * 604800,
-        "M" | "mo" | "month" | "months" => num * 2592000, // 30 days
-        "y" | "yr" | "yrs" | "year" | "years" => num * 31536000, // 365 days
-        _ => return Err(format!("unknown time unit: {}", unit)),
-    };
-
-    Ok(Duration::from_secs(seconds))
+    humantime::parse_duration(s.trim()).map_err(|e| e.to_string())
 }
 
 /// Determine metadata order based on which flag appeared first in argv

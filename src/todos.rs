@@ -7,8 +7,7 @@ use std::path::Path;
 
 use regex::Regex;
 
-/// Maximum file size for TODO extraction (1MB).
-const MAX_FILE_SIZE: u64 = 1_000_000;
+use crate::file_utils::read_source_file;
 
 /// A single TODO/FIXME marker extracted from a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,20 +41,13 @@ pub struct TodoItem {
 /// - `FIXME - memory leak` → type="FIXME", text="memory leak"
 /// - `// TODO: implement` → type="TODO", text="implement"
 pub fn extract_todos(path: &Path) -> Option<Vec<TodoItem>> {
-    // Skip files that are too large
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
+    let (content, extension) = read_source_file(path)?;
 
     // Only process files with recognized extensions
-    let extension = path.extension()?.to_str()?;
     if !is_supported_extension(extension) {
         return None;
     }
 
-    let content = std::fs::read_to_string(path).ok()?;
     let todos = extract_todos_from_content(&content);
 
     if todos.is_empty() { None } else { Some(todos) }
@@ -348,5 +340,64 @@ fn bar() {}
         assert_eq!(clean_comment_text("text */"), "text");
         assert_eq!(clean_comment_text("text -->"), "text");
         assert_eq!(clean_comment_text("  spaced  "), "spaced");
+    }
+
+    // Edge case tests for issue #61
+
+    #[test]
+    fn test_todo_with_trailing_punctuation() {
+        let content = "// TODO: fix this bug!!!\n";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].text, "fix this bug!!!");
+    }
+
+    #[test]
+    fn test_todo_inside_doc_comment() {
+        // Doc comments with TODOs should still be captured
+        let content = "/// TODO: document this function\nfn foo() {}";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].text, "document this function");
+    }
+
+    #[test]
+    fn test_multiple_todos_same_line_type() {
+        let content = "// TODO: first\n// TODO: second\n// TODO: third";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 3);
+        assert_eq!(todos[0].line, 1);
+        assert_eq!(todos[1].line, 2);
+        assert_eq!(todos[2].line, 3);
+    }
+
+    #[test]
+    fn test_todo_preserves_line_numbers() {
+        let content = "\n\n\n// TODO: on line 4\n\n// FIXME: on line 6";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].line, 4);
+        assert_eq!(todos[1].line, 6);
+    }
+
+    #[test]
+    fn test_note_marker() {
+        let content = "# NOTE: important observation\n";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].marker_type, "NOTE");
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let todos = extract_todos_from_content("");
+        assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn test_content_without_todos() {
+        let content = "// Regular comment\nfn main() {}\n// Another comment";
+        let todos = extract_todos_from_content(content);
+        assert!(todos.is_empty());
     }
 }

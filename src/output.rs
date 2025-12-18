@@ -259,16 +259,27 @@ impl TreeFormatter {
         output.push_str(&cont_prefix);
         output.push('\n');
 
-        // Metadata lines
-        for line in &lines {
-            let content = line.content.trim();
+        // Metadata lines with group separators (matches colored output logic)
+        let line_refs: Vec<_> = lines.iter().collect();
+        let mut prev_indent: Option<usize> = None;
+        for (i, meta_line) in lines.iter().enumerate() {
+            let content = meta_line.content.trim();
 
             // Empty line is a separator
             if content.is_empty() {
                 output.push_str(&cont_prefix);
                 output.push('\n');
+                prev_indent = None; // Reset indent tracking after separator
                 continue;
             }
+
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&line_refs[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                output.push_str(&cont_prefix);
+                output.push('\n');
+            }
+            prev_indent = Some(meta_line.indent);
 
             let wrapped = if let Some(width) = wrap_width {
                 wrap_text(content, width)

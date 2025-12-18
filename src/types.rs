@@ -8,10 +8,8 @@ use regex::Regex;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::file_utils::read_source_file;
 use crate::metadata::{MetadataBlock, MetadataExtractor};
-
-/// Maximum file size for type extraction (1MB)
-const MAX_FILE_SIZE: u64 = 1_000_000;
 
 /// Calculate the indentation level of a line (number of spaces, tabs = 4 spaces).
 fn calculate_indent(line: &str) -> usize {
@@ -30,15 +28,7 @@ fn calculate_indent(line: &str) -> usize {
 /// Returns a list of (signature, symbol_name, indent_level) tuples.
 /// indent_level is the number of spaces (tabs are converted to 4 spaces).
 pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
-    // Skip files that are too large
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
-
-    let extension = path.extension()?.to_str()?;
-    let content = std::fs::read_to_string(path).ok()?;
+    let (content, extension) = read_source_file(path)?;
 
     let signatures = match extension {
         "rs" => extract_rust_signatures(&content),

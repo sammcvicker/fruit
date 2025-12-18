@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified duration parsing to use `humantime` crate directly, removing redundant custom parsing (#64)
+- Consolidated file-reading logic into shared `file_utils` module (#58, #65)
+- Aligned plain text metadata block formatting with colored output to ensure consistent group separators (#60)
+- Extended Python standard library list with comprehensive module coverage (#63)
+
+### Fixed
+
+- `MetadataBlock.total_lines()` now includes import lines in the count (#59)
+- Removed unused `repo_root` field from `GitFilter` struct (#62)
+- Removed unused `LineStyle` variants (`ClassName`, `MethodName`, `Docstring`) from metadata.rs (#57)
+
 ### Added
 
 - `--newer` and `--older` flags to filter files by modification time (#50)
