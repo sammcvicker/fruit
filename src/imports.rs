@@ -70,7 +70,8 @@ pub fn extract_imports(path: &Path) -> Option<FileImports> {
 // Rust import extraction
 // =============================================================================
 
-static RUST_USE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^use\s+([^;]+);").unwrap());
+static RUST_USE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^use\s+([^;]+);").expect("RUST_USE regex is invalid"));
 
 fn extract_rust_imports(content: &str) -> Option<FileImports> {
     let mut imports = FileImports::default();
@@ -139,14 +140,19 @@ fn simplify_path(path: &str) -> String {
 // TypeScript/JavaScript import extraction
 // =============================================================================
 
-static TS_IMPORT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"import\s+(?:[^'"]+\s+from\s+)?['"]([^'"]+)['"]"#).unwrap());
+static TS_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"import\s+(?:[^'"]+\s+from\s+)?['"]([^'"]+)['"]"#)
+        .expect("TS_IMPORT regex is invalid")
+});
 
-static JS_REQUIRE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap());
+static JS_REQUIRE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).expect("JS_REQUIRE regex is invalid")
+});
 
-static TS_EXPORT_FROM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]"#).unwrap());
+static TS_EXPORT_FROM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]"#)
+        .expect("TS_EXPORT_FROM regex is invalid")
+});
 
 // Node.js built-in modules
 const NODE_BUILTINS: &[&str] = &[
@@ -273,10 +279,12 @@ fn categorize_js_import(module: &str, imports: &mut FileImports) {
 // Python import extraction
 // =============================================================================
 
-static PY_IMPORT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^import\s+(\w+)").unwrap());
+static PY_IMPORT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^import\s+(\w+)").expect("PY_IMPORT regex is invalid"));
 
-static PY_FROM_IMPORT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^from\s+(\.*)(\w+)?").unwrap());
+static PY_FROM_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^from\s+(\.*)(\w+)?").expect("PY_FROM_IMPORT regex is invalid")
+});
 
 // Python standard library modules (comprehensive list of top-level modules)
 const PYTHON_STDLIB: &[&str] = &[
@@ -529,11 +537,13 @@ fn categorize_python_import(module: &str, _is_from: bool, imports: &mut FileImpo
 // Go import extraction
 // =============================================================================
 
-static GO_IMPORT_SINGLE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^import\s+"([^"]+)""#).unwrap());
+static GO_IMPORT_SINGLE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^import\s+"([^"]+)""#).expect("GO_IMPORT_SINGLE regex is invalid")
+});
 
-static GO_IMPORT_BLOCK_LINE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^\s*(?:\w+\s+)?"([^"]+)""#).unwrap());
+static GO_IMPORT_BLOCK_LINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^\s*(?:\w+\s+)?"([^"]+)""#).expect("GO_IMPORT_BLOCK_LINE regex is invalid")
+});
 
 fn extract_go_imports(content: &str) -> Option<FileImports> {
     let mut imports = FileImports::default();
