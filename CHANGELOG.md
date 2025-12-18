@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--stats` flag to show codebase statistics (#47)
+  - Displays file counts, directory counts, and line counts by language
+  - `--stats --json` outputs statistics as JSON for scripting
+  - `--stats --no-lines` skips line counting for faster output
+  - Language detection based on file extension
 - `--markdown` / `-m` flag for Markdown output format (#46)
   - Outputs tree as nested markdown list, ideal for documentation and LLM context
   - Directories shown in bold (`**name/**`), files in code spans (`` `name` ``)

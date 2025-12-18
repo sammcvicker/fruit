@@ -4,6 +4,7 @@ pub mod comments;
 pub mod git;
 pub mod metadata;
 pub mod output;
+pub mod stats;
 pub mod todos;
 pub mod tree;
 pub mod types;
@@ -19,6 +20,9 @@ pub use metadata::{
 };
 pub use output::{
     MarkdownFormatter, OutputConfig, StreamingFormatter, TreeFormatter, print_json, print_markdown,
+};
+pub use stats::{
+    CodebaseStats, LanguageStats, StatsCollector, StatsConfig, print_stats, print_stats_json,
 };
 pub use todos::{TodoItem, extract_todos};
 pub use tree::{FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};
