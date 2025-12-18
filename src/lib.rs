@@ -17,7 +17,9 @@ pub use metadata::{
     CommentExtractor, LineStyle, MetadataBlock, MetadataConfig, MetadataExtractor, MetadataLine,
     MetadataOrder,
 };
-pub use output::{OutputConfig, StreamingFormatter, TreeFormatter, print_json};
+pub use output::{
+    MarkdownFormatter, OutputConfig, StreamingFormatter, TreeFormatter, print_json, print_markdown,
+};
 pub use todos::{TodoItem, extract_todos};
 pub use tree::{FileFilter, StreamingOutput, StreamingWalker, TreeNode, TreeWalker, WalkerConfig};
 pub use types::{TypeExtractor, extract_type_signatures};

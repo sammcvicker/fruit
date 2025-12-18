@@ -6,8 +6,8 @@ use std::process;
 
 use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use fruit::{
-    GitignoreFilter, MetadataConfig, MetadataOrder, OutputConfig, StreamingFormatter,
-    StreamingWalker, TreeWalker, WalkerConfig, print_json,
+    GitignoreFilter, MarkdownFormatter, MetadataConfig, MetadataOrder, OutputConfig,
+    StreamingFormatter, StreamingWalker, TreeWalker, WalkerConfig, print_json, print_markdown,
 };
 
 /// Color output mode
@@ -106,8 +106,12 @@ struct Args {
     wrap: usize,
 
     /// Output in JSON format
-    #[arg(long = "json")]
+    #[arg(long = "json", conflicts_with = "markdown")]
     json: bool,
+
+    /// Output in Markdown format (suitable for documentation and LLM context)
+    #[arg(long = "markdown", short = 'm', conflicts_with = "json")]
+    markdown: bool,
 
     /// Prefix for metadata lines (e.g., "# " or "// ")
     #[arg(short = 'p', long = "prefix")]
@@ -179,7 +183,7 @@ fn main() {
     };
 
     // JSON output requires full tree in memory (for serialization)
-    // Console output uses streaming to reduce memory usage
+    // Markdown and console output use streaming to reduce memory usage
     let result = if args.json {
         let mut walker = TreeWalker::new(walker_config);
 
@@ -204,7 +208,7 @@ fn main() {
         };
         print_json(&tree)
     } else {
-        // Use streaming walker for console output - much lower memory usage
+        // Use streaming walker for console/markdown output - much lower memory usage
         let mut walker = StreamingWalker::new(walker_config);
 
         // Set up gitignore filter unless --all is specified
@@ -226,7 +230,11 @@ fn main() {
         };
 
         let output_config = OutputConfig {
-            use_color: should_use_color(args.color),
+            use_color: if args.markdown {
+                false
+            } else {
+                should_use_color(args.color)
+            },
             metadata: metadata_config,
             wrap_width: if args.wrap == 0 {
                 None
@@ -234,18 +242,33 @@ fn main() {
                 Some(args.wrap)
             },
         };
-        let mut formatter = StreamingFormatter::new(output_config);
 
-        match walker.walk_streaming(&root, &mut formatter) {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => {
-                eprintln!(
-                    "fruit: cannot access '{}': No such file or directory",
-                    args.path.display()
-                );
-                process::exit(1);
+        if args.markdown {
+            let mut formatter = MarkdownFormatter::new(output_config);
+            match walker.walk_streaming(&root, &mut formatter) {
+                Ok(Some(_)) => print_markdown(&formatter),
+                Ok(None) => {
+                    eprintln!(
+                        "fruit: cannot access '{}': No such file or directory",
+                        args.path.display()
+                    );
+                    process::exit(1);
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
+        } else {
+            let mut formatter = StreamingFormatter::new(output_config);
+            match walker.walk_streaming(&root, &mut formatter) {
+                Ok(Some(_)) => Ok(()),
+                Ok(None) => {
+                    eprintln!(
+                        "fruit: cannot access '{}': No such file or directory",
+                        args.path.display()
+                    );
+                    process::exit(1);
+                }
+                Err(e) => Err(e),
+            }
         }
     };
 
