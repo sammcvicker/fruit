@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--todos` flag to extract and display TODO/FIXME/HACK/XXX/BUG/NOTE markers from comments (#45)
+  - Shows task markers beneath file entries with line numbers
+  - Combines with `-c` to show both comments and TODOs
+  - JSON output includes `todos` array with `type`, `text`, and `line` fields
+  - Requires colon after marker to reduce false positives (e.g., `// TODO: fix this`)
 - Type signatures in JSON output when using `-t/--types` flag (#29)
   - `--json -t` now includes a `types` array in each file object
   - `--json -c -t` includes both `comment` and `types` fields

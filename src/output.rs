@@ -805,6 +805,7 @@ mod tests {
                     path: "Cargo.toml".into(),
                     comment: Some("Package manifest".to_string()),
                     types: None,
+                    todos: None,
                 },
                 TreeNode::Dir {
                     name: "src".to_string(),
@@ -815,12 +816,14 @@ mod tests {
                             path: "src/main.rs".into(),
                             comment: Some("CLI entry point".to_string()),
                             types: None,
+                            todos: None,
                         },
                         TreeNode::File {
                             name: "lib.rs".to_string(),
                             path: "src/lib.rs".into(),
                             comment: None,
                             types: None,
+                            todos: None,
                         },
                     ],
                 },
@@ -886,6 +889,7 @@ mod tests {
             path: "test.rs".into(),
             comment: Some("Single line comment".to_string()),
             types: None,
+            todos: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -918,6 +922,7 @@ mod tests {
             path: "test.rs".into(),
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
+            todos: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -955,6 +960,7 @@ mod tests {
             path: "test.rs".into(),
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
+            todos: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -996,6 +1002,7 @@ mod tests {
             path: "test.rs".into(),
             comment: Some("Comment text".to_string()),
             types: None,
+            todos: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
@@ -1027,6 +1034,7 @@ mod tests {
             path: "test.rs".into(),
             comment: None,
             types: None,
+            todos: None,
         };
 
         let formatter = TreeFormatter::new(OutputConfig {
