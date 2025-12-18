@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::comments::extract_first_comment;
 use crate::git::{GitFilter, GitignoreFilter};
+use crate::imports::{FileImports, extract_imports};
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
 use crate::todos::extract_todos;
 use crate::types::extract_type_signatures;
@@ -114,6 +115,8 @@ pub enum TreeNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         todos: Option<Vec<JsonTodoItem>>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        imports: Option<FileImports>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         size_bytes: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         size_human: Option<String>,
@@ -146,6 +149,7 @@ pub struct WalkerConfig {
     pub extract_comments: bool,
     pub extract_types: bool,
     pub extract_todos: bool,
+    pub extract_imports: bool,
     pub show_size: bool,
     pub ignore_patterns: Vec<String>,
     /// Number of parallel workers for metadata extraction.
@@ -223,6 +227,11 @@ impl TreeWalker {
             } else {
                 None
             };
+            let imports = if self.config.extract_imports {
+                extract_imports(path)
+            } else {
+                None
+            };
             let (size_bytes, size_human) = if self.config.show_size {
                 get_file_size(path)
             } else {
@@ -234,6 +243,7 @@ impl TreeWalker {
                 comment,
                 types,
                 todos,
+                imports,
                 size_bytes,
                 size_human,
             });
@@ -423,6 +433,7 @@ impl StreamingWalker {
         let extract_comments = self.config.extract_comments;
         let extract_types = self.config.extract_types;
         let extract_todo_markers = self.config.extract_todos;
+        let extract_import_statements = self.config.extract_imports;
 
         let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
             if self.config.parallel_workers == 0 {
@@ -436,6 +447,7 @@ impl StreamingWalker {
                             extract_comments,
                             extract_types,
                             extract_todo_markers,
+                            extract_import_statements,
                         );
                         (i, metadata)
                     })
@@ -456,6 +468,7 @@ impl StreamingWalker {
                                     extract_comments,
                                     extract_types,
                                     extract_todo_markers,
+                                    extract_import_statements,
                                 );
                                 (i, metadata)
                             })
@@ -472,6 +485,7 @@ impl StreamingWalker {
                                     extract_comments,
                                     extract_types,
                                     extract_todo_markers,
+                                    extract_import_statements,
                                 );
                                 (i, metadata)
                             })
@@ -771,13 +785,14 @@ impl StreamingWalker {
         Ok(Some((dir_count, file_count)))
     }
 
-    /// Extract metadata (comments and/or type signatures and/or TODOs) from a file.
+    /// Extract metadata (comments and/or type signatures and/or TODOs and/or imports) from a file.
     fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
         extract_metadata_from_path(
             path,
             self.config.extract_comments,
             self.config.extract_types,
             self.config.extract_todos,
+            self.config.extract_imports,
         )
     }
 }
@@ -790,6 +805,7 @@ fn extract_metadata_from_path(
     extract_comments: bool,
     extract_types: bool,
     extract_todo_markers: bool,
+    extract_import_statements: bool,
 ) -> Option<MetadataBlock> {
     let mut block = MetadataBlock::new();
 
@@ -826,6 +842,20 @@ fn extract_metadata_from_path(
                     MetadataLine::with_style(content, LineStyle::Todo)
                 })
                 .collect();
+        }
+    }
+
+    // Extract imports
+    if extract_import_statements {
+        if let Some(imports) = extract_imports(path) {
+            // Format imports as a summary line
+            let summary = imports.summary();
+            if !summary.is_empty() {
+                block.import_lines = vec![MetadataLine::with_style(
+                    format!("imports: {}", summary),
+                    LineStyle::Import,
+                )];
+            }
         }
     }
 

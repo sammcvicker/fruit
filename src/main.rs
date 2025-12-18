@@ -102,6 +102,11 @@ struct Args {
     #[arg(long = "todos-only", requires = "todos")]
     todos_only: bool,
 
+    /// Show import/dependency statements from source files
+    /// Extracts and categorizes imports (external, std, internal)
+    #[arg(short = 'i', long = "imports")]
+    imports: bool,
+
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
     wrap: usize,
@@ -173,8 +178,8 @@ fn main() {
     };
     let show_todos = args.todos;
 
-    // When -t or --todos is specified, default to full mode
-    let full_mode = args.full_comment || args.types || args.todos;
+    // When -t or --todos or --imports is specified, default to full mode
+    let full_mode = args.full_comment || args.types || args.todos || args.imports;
 
     let walker_config = WalkerConfig {
         show_all: args.all,
@@ -183,6 +188,7 @@ fn main() {
         extract_comments: show_comments,
         extract_types: show_types,
         extract_todos: show_todos,
+        extract_imports: args.imports,
         show_size: args.size,
         ignore_patterns: args.ignore.clone(),
         parallel_workers: args.jobs,

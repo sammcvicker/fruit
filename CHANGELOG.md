@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--imports` / `-i` flag to show import/dependency statements (#49)
+  - Extracts imports from Rust, TypeScript, JavaScript, Python, and Go files
+  - Categorizes imports as external (packages), std (standard library), or internal (project)
+  - Console output shows `imports: clap, serde, std::{path, io}, crate::{git, tree}`
+  - JSON output includes categorized `imports` object with `external`, `std`, `internal` arrays
+  - Displayed in magenta for easy visual distinction
 - `--size` / `-s` flag to display file sizes (#48)
   - Shows human-readable sizes (e.g., `1.2K`, `3.5M`) next to filenames
   - Displayed in green `[size]` brackets in console output

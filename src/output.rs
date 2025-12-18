@@ -947,6 +947,7 @@ mod tests {
                     comment: Some("Package manifest".to_string()),
                     types: None,
                     todos: None,
+                    imports: None,
                     size_bytes: None,
                     size_human: None,
                 },
@@ -960,6 +961,7 @@ mod tests {
                             comment: Some("CLI entry point".to_string()),
                             types: None,
                             todos: None,
+                            imports: None,
                             size_bytes: None,
                             size_human: None,
                         },
@@ -969,6 +971,7 @@ mod tests {
                             comment: None,
                             types: None,
                             todos: None,
+                            imports: None,
                             size_bytes: None,
                             size_human: None,
                         },
@@ -1037,6 +1040,7 @@ mod tests {
             comment: Some("Single line comment".to_string()),
             types: None,
             todos: None,
+            imports: None,
             size_bytes: None,
             size_human: None,
         };
@@ -1072,6 +1076,7 @@ mod tests {
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
             todos: None,
+            imports: None,
             size_bytes: None,
             size_human: None,
         };
@@ -1112,6 +1117,7 @@ mod tests {
             comment: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
             todos: None,
+            imports: None,
             size_bytes: None,
             size_human: None,
         };
@@ -1156,6 +1162,7 @@ mod tests {
             comment: Some("Comment text".to_string()),
             types: None,
             todos: None,
+            imports: None,
             size_bytes: None,
             size_human: None,
         };
@@ -1190,6 +1197,7 @@ mod tests {
             comment: None,
             types: None,
             todos: None,
+            imports: None,
             size_bytes: None,
             size_human: None,
         };
