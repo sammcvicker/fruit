@@ -704,31 +704,11 @@ impl StreamingWalker {
 
     /// Extract metadata (comments and/or type signatures) from a file.
     fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
-        let mut block = MetadataBlock::new();
-
-        // Extract comments
-        if self.config.extract_comments {
-            if let Some(comment) = extract_first_comment(path) {
-                block.comment_lines = comment
-                    .lines()
-                    .map(|line| MetadataLine::new(line.to_string()))
-                    .collect();
-            }
-        }
-
-        // Extract type signatures
-        if self.config.extract_types {
-            if let Some(signatures) = extract_type_signatures(path) {
-                block.type_lines = signatures
-                    .into_iter()
-                    .map(|(sig, sym, indent)| {
-                        MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
-                    })
-                    .collect();
-            }
-        }
-
-        if block.is_empty() { None } else { Some(block) }
+        extract_metadata_from_path(
+            path,
+            self.config.extract_comments,
+            self.config.extract_types,
+        )
     }
 }
 
