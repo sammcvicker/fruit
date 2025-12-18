@@ -345,6 +345,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "criterion",
+ "fruit",
  "git2",
  "glob",
  "ignore",

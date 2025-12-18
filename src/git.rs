@@ -198,66 +198,24 @@ impl GitFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::process::Command;
-    use tempfile::TempDir;
-
-    fn create_test_repo() -> TempDir {
-        let dir = TempDir::new().unwrap();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        dir
-    }
+    use crate::test_utils::TestRepo;
 
     #[test]
     fn test_tracked_file() {
-        let dir = create_test_repo();
-        let file_path = dir.path().join("tracked.rs");
-        fs::write(&file_path, "fn main() {}").unwrap();
+        let repo = TestRepo::with_git();
+        let file_path = repo.add_file("tracked.rs", "fn main() {}");
 
-        Command::new("git")
-            .args(["add", "tracked.rs"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        let filter = GitFilter::new(dir.path()).unwrap();
+        let filter = GitFilter::new(repo.path()).unwrap();
         assert!(filter.is_tracked(&file_path));
     }
 
     #[test]
     fn test_untracked_file() {
-        let dir = create_test_repo();
-        let tracked = dir.path().join("tracked.rs");
-        let untracked = dir.path().join("untracked.rs");
+        let repo = TestRepo::with_git();
+        let tracked = repo.add_file("tracked.rs", "fn main() {}");
+        let untracked = repo.add_untracked("untracked.rs", "fn other() {}");
 
-        fs::write(&tracked, "fn main() {}").unwrap();
-        fs::write(&untracked, "fn other() {}").unwrap();
-
-        Command::new("git")
-            .args(["add", "tracked.rs"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        let filter = GitFilter::new(dir.path()).unwrap();
+        let filter = GitFilter::new(repo.path()).unwrap();
         assert!(filter.is_tracked(&tracked));
         assert!(!filter.is_tracked(&untracked));
     }
@@ -265,96 +223,93 @@ mod tests {
     // Tests for GitignoreFilter
     #[test]
     fn test_gitignore_basic() {
-        let dir = create_test_repo();
+        let repo = TestRepo::with_git();
 
         // Create .gitignore
-        fs::write(dir.path().join(".gitignore"), "*.log\ntarget/\n").unwrap();
+        repo.add_untracked(".gitignore", "*.log\ntarget/\n");
 
         // Create files
-        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
-        fs::write(dir.path().join("debug.log"), "log content").unwrap();
+        repo.add_untracked("main.rs", "fn main() {}");
+        repo.add_untracked("debug.log", "log content");
 
-        let filter = GitignoreFilter::new(dir.path()).unwrap();
+        let filter = GitignoreFilter::new(repo.path()).unwrap();
 
         // main.rs should be included
-        assert!(filter.is_included(&dir.path().join("main.rs")));
+        assert!(filter.is_included(&repo.path().join("main.rs")));
         // debug.log should be excluded (matches *.log)
-        assert!(!filter.is_included(&dir.path().join("debug.log")));
+        assert!(!filter.is_included(&repo.path().join("debug.log")));
     }
 
     #[test]
     fn test_gitignore_directory() {
-        let dir = create_test_repo();
+        let repo = TestRepo::with_git();
 
         // Create .gitignore
-        fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
+        repo.add_untracked(".gitignore", "target/\n");
 
         // Create directories and files
-        fs::create_dir_all(dir.path().join("src")).unwrap();
-        fs::create_dir_all(dir.path().join("target")).unwrap();
-        fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
-        fs::write(dir.path().join("target/debug"), "binary").unwrap();
+        repo.add_untracked("src/main.rs", "fn main() {}");
+        repo.add_untracked("target/debug", "binary");
 
-        let filter = GitignoreFilter::new(dir.path()).unwrap();
+        let filter = GitignoreFilter::new(repo.path()).unwrap();
 
         // src directory should be included
-        assert!(filter.is_included(&dir.path().join("src")));
+        assert!(filter.is_included(&repo.path().join("src")));
         // src/main.rs should be included
-        assert!(filter.is_included(&dir.path().join("src/main.rs")));
+        assert!(filter.is_included(&repo.path().join("src/main.rs")));
         // target directory should be excluded
-        assert!(!filter.is_included(&dir.path().join("target")));
+        assert!(!filter.is_included(&repo.path().join("target")));
         // target/debug should be excluded
-        assert!(!filter.is_included(&dir.path().join("target/debug")));
+        assert!(!filter.is_included(&repo.path().join("target/debug")));
     }
 
     #[test]
     fn test_gitignore_nested() {
-        let dir = create_test_repo();
+        let repo = TestRepo::with_git();
 
         // Create root .gitignore
-        fs::write(dir.path().join(".gitignore"), "*.log\n").unwrap();
+        repo.add_untracked(".gitignore", "*.log\n");
 
         // Create subdir with its own .gitignore
-        fs::create_dir_all(dir.path().join("subdir")).unwrap();
-        fs::write(dir.path().join("subdir/.gitignore"), "*.tmp\n").unwrap();
+        repo.add_untracked("subdir/.gitignore", "*.tmp\n");
 
         // Create files
-        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
-        fs::write(dir.path().join("subdir/code.rs"), "fn code() {}").unwrap();
-        fs::write(dir.path().join("subdir/cache.tmp"), "temp").unwrap();
-        fs::write(dir.path().join("root.log"), "log").unwrap();
-        fs::write(dir.path().join("subdir/nested.log"), "log").unwrap();
+        repo.add_untracked("main.rs", "fn main() {}");
+        repo.add_untracked("subdir/code.rs", "fn code() {}");
+        repo.add_untracked("subdir/cache.tmp", "temp");
+        repo.add_untracked("root.log", "log");
+        repo.add_untracked("subdir/nested.log", "log");
 
-        let filter = GitignoreFilter::new(dir.path()).unwrap();
+        let filter = GitignoreFilter::new(repo.path()).unwrap();
 
         // main.rs should be included
-        assert!(filter.is_included(&dir.path().join("main.rs")));
+        assert!(filter.is_included(&repo.path().join("main.rs")));
         // subdir/code.rs should be included
-        assert!(filter.is_included(&dir.path().join("subdir/code.rs")));
+        assert!(filter.is_included(&repo.path().join("subdir/code.rs")));
         // subdir/cache.tmp should be excluded (nested .gitignore)
-        assert!(!filter.is_included(&dir.path().join("subdir/cache.tmp")));
+        assert!(!filter.is_included(&repo.path().join("subdir/cache.tmp")));
         // root.log should be excluded (root .gitignore)
-        assert!(!filter.is_included(&dir.path().join("root.log")));
+        assert!(!filter.is_included(&repo.path().join("root.log")));
         // subdir/nested.log should be excluded (root .gitignore applies to subdirs)
-        assert!(!filter.is_included(&dir.path().join("subdir/nested.log")));
+        assert!(!filter.is_included(&repo.path().join("subdir/nested.log")));
     }
 
     #[test]
     fn test_gitignore_negation() {
-        let dir = create_test_repo();
+        let repo = TestRepo::with_git();
 
         // Create .gitignore with negation pattern
-        fs::write(dir.path().join(".gitignore"), "*.log\n!important.log\n").unwrap();
+        repo.add_untracked(".gitignore", "*.log\n!important.log\n");
 
         // Create files
-        fs::write(dir.path().join("debug.log"), "debug").unwrap();
-        fs::write(dir.path().join("important.log"), "important").unwrap();
+        repo.add_untracked("debug.log", "debug");
+        repo.add_untracked("important.log", "important");
 
-        let filter = GitignoreFilter::new(dir.path()).unwrap();
+        let filter = GitignoreFilter::new(repo.path()).unwrap();
 
         // debug.log should be excluded
-        assert!(!filter.is_included(&dir.path().join("debug.log")));
+        assert!(!filter.is_included(&repo.path().join("debug.log")));
         // important.log should be included (negation pattern)
-        assert!(filter.is_included(&dir.path().join("important.log")));
+        assert!(filter.is_included(&repo.path().join("important.log")));
     }
 }
