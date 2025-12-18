@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regex `unwrap()` calls in lazy statics now use `expect()` with descriptive messages (#75)
 - Go block comment extraction now correctly handles multiple block comments (#74)
 - Test utilities now use descriptive panic messages with context (method name, paths, errors) (#72)
+- Added integration tests for large file handling and git edge cases (#73)
 - `MetadataBlock.total_lines()` now includes import lines in the count (#59)
 - Removed unused `repo_root` field from `GitFilter` struct (#62)
 - Removed unused `LineStyle` variants (`ClassName`, `MethodName`, `Docstring`) from metadata.rs (#57)
