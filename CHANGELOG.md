@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Go block comment extraction no longer panics on edge cases with `*/` (#67)
 - `MetadataBlock.total_lines()` now includes import lines in the count (#59)
 - Removed unused `repo_root` field from `GitFilter` struct (#62)
 - Removed unused `LineStyle` variants (`ClassName`, `MethodName`, `Docstring`) from metadata.rs (#57)
