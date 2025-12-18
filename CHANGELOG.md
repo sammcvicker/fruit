@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Modularized `output.rs` into separate submodules for better maintainability (#70)
+  - `output/config.rs` - Output configuration types
+  - `output/utils.rs` - Shared utility functions (text wrapping, prefix calculation)
+  - `output/tree.rs` - Buffered tree formatter
+  - `output/streaming.rs` - Streaming console formatter
+  - `output/markdown.rs` - Markdown output formatter
+  - `output/json.rs` - JSON output
 - Simplified duration parsing to use `humantime` crate directly, removing redundant custom parsing (#64)
 - Consolidated file-reading logic into shared `file_utils` module (#58, #65)
 - Aligned plain text metadata block formatting with colored output to ensure consistent group separators (#60)
