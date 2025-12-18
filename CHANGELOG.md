@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--max-file-size` flag to configure maximum file size for metadata extraction (#76)
+  - Default remains 1MB, use suffixes like `5M`, `100K`, `1G` to customize
+  - Files larger than the limit are skipped to prevent excessive memory usage
+  - Example: `fruit --max-file-size 5M` to allow files up to 5MB
+
 ### Changed
 
 - Simplified duration parsing to use `humantime` crate directly, removing redundant custom parsing (#64)
