@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::comments::extract_first_comment;
 use crate::git::{GitFilter, GitignoreFilter};
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
+use crate::todos::extract_todos;
 use crate::types::extract_type_signatures;
 
 // Re-export for convenience
@@ -79,6 +80,25 @@ fn should_ignore_path(path: &Path, ignore_patterns: &[String]) -> bool {
     false
 }
 
+/// Serializable TODO item for JSON output.
+#[derive(Debug, Clone, Serialize)]
+pub struct JsonTodoItem {
+    #[serde(rename = "type")]
+    pub marker_type: String,
+    pub text: String,
+    pub line: usize,
+}
+
+impl From<&crate::todos::TodoItem> for JsonTodoItem {
+    fn from(item: &crate::todos::TodoItem) -> Self {
+        Self {
+            marker_type: item.marker_type.clone(),
+            text: item.text.clone(),
+            line: item.line,
+        }
+    }
+}
+
 /// TreeNode for JSON output - still builds full tree in memory.
 /// For large repos, use StreamingWalker instead for console output.
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +111,8 @@ pub enum TreeNode {
         comment: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         types: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        todos: Option<Vec<JsonTodoItem>>,
     },
     Dir {
         name: String,
@@ -119,6 +141,7 @@ pub struct WalkerConfig {
     pub dirs_only: bool,
     pub extract_comments: bool,
     pub extract_types: bool,
+    pub extract_todos: bool,
     pub ignore_patterns: Vec<String>,
     /// Number of parallel workers for metadata extraction.
     /// 0 = auto-detect (use all available cores)
@@ -190,11 +213,17 @@ impl TreeWalker {
             } else {
                 None
             };
+            let todos = if self.config.extract_todos {
+                extract_todos(path).map(|items| items.iter().map(JsonTodoItem::from).collect())
+            } else {
+                None
+            };
             return Some(TreeNode::File {
                 name,
                 path: path.to_path_buf(),
                 comment,
                 types,
+                todos,
             });
         }
 
@@ -379,51 +408,63 @@ impl StreamingWalker {
         // non-Sync FileFilter/GitFilter) in the parallel closure.
         let extract_comments = self.config.extract_comments;
         let extract_types = self.config.extract_types;
+        let extract_todo_markers = self.config.extract_todos;
 
-        let metadata_results: Vec<(usize, Option<MetadataBlock>)> = if self.config.parallel_workers
-            == 0
-        {
-            // Auto-detect: use rayon's default thread pool
-            file_indices
-                .par_iter()
-                .map(|&i| {
-                    let path = &entries[i].path;
-                    let metadata =
-                        extract_metadata_from_path(path, extract_comments, extract_types);
-                    (i, metadata)
-                })
-                .collect()
-        } else {
-            // Use custom thread pool with specified worker count
-            match rayon::ThreadPoolBuilder::new()
-                .num_threads(self.config.parallel_workers)
-                .build()
-            {
-                Ok(pool) => pool.install(|| {
-                    file_indices
-                        .par_iter()
-                        .map(|&i| {
-                            let path = &entries[i].path;
-                            let metadata =
-                                extract_metadata_from_path(path, extract_comments, extract_types);
-                            (i, metadata)
-                        })
-                        .collect()
-                }),
-                Err(_) => {
-                    // Fall back to rayon's global pool if custom pool creation fails
-                    file_indices
-                        .par_iter()
-                        .map(|&i| {
-                            let path = &entries[i].path;
-                            let metadata =
-                                extract_metadata_from_path(path, extract_comments, extract_types);
-                            (i, metadata)
-                        })
-                        .collect()
+        let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
+            if self.config.parallel_workers == 0 {
+                // Auto-detect: use rayon's default thread pool
+                file_indices
+                    .par_iter()
+                    .map(|&i| {
+                        let path = &entries[i].path;
+                        let metadata = extract_metadata_from_path(
+                            path,
+                            extract_comments,
+                            extract_types,
+                            extract_todo_markers,
+                        );
+                        (i, metadata)
+                    })
+                    .collect()
+            } else {
+                // Use custom thread pool with specified worker count
+                match rayon::ThreadPoolBuilder::new()
+                    .num_threads(self.config.parallel_workers)
+                    .build()
+                {
+                    Ok(pool) => pool.install(|| {
+                        file_indices
+                            .par_iter()
+                            .map(|&i| {
+                                let path = &entries[i].path;
+                                let metadata = extract_metadata_from_path(
+                                    path,
+                                    extract_comments,
+                                    extract_types,
+                                    extract_todo_markers,
+                                );
+                                (i, metadata)
+                            })
+                            .collect()
+                    }),
+                    Err(_) => {
+                        // Fall back to rayon's global pool if custom pool creation fails
+                        file_indices
+                            .par_iter()
+                            .map(|&i| {
+                                let path = &entries[i].path;
+                                let metadata = extract_metadata_from_path(
+                                    path,
+                                    extract_comments,
+                                    extract_types,
+                                    extract_todo_markers,
+                                );
+                                (i, metadata)
+                            })
+                            .collect()
+                    }
                 }
-            }
-        };
+            };
 
         // Build a map of index -> metadata for quick lookup
         let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
@@ -702,12 +743,13 @@ impl StreamingWalker {
         Ok(Some((dir_count, file_count)))
     }
 
-    /// Extract metadata (comments and/or type signatures) from a file.
+    /// Extract metadata (comments and/or type signatures and/or TODOs) from a file.
     fn extract_metadata(&self, path: &Path) -> Option<MetadataBlock> {
         extract_metadata_from_path(
             path,
             self.config.extract_comments,
             self.config.extract_types,
+            self.config.extract_todos,
         )
     }
 }
@@ -719,6 +761,7 @@ fn extract_metadata_from_path(
     path: &Path,
     extract_comments: bool,
     extract_types: bool,
+    extract_todo_markers: bool,
 ) -> Option<MetadataBlock> {
     let mut block = MetadataBlock::new();
 
@@ -739,6 +782,20 @@ fn extract_metadata_from_path(
                 .into_iter()
                 .map(|(sig, sym, indent)| {
                     MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+                })
+                .collect();
+        }
+    }
+
+    // Extract TODO/FIXME markers
+    if extract_todo_markers {
+        if let Some(todos) = extract_todos(path) {
+            block.todo_lines = todos
+                .iter()
+                .map(|todo| {
+                    let content =
+                        format!("{}: {} (line {})", todo.marker_type, todo.text, todo.line);
+                    MetadataLine::with_style(content, LineStyle::Todo)
                 })
                 .collect();
         }

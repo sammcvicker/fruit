@@ -21,6 +21,8 @@ pub enum LineStyle {
     MethodName,
     /// Docstring display (for future use)
     Docstring,
+    /// TODO/FIXME marker display
+    Todo,
 }
 
 impl LineStyle {
@@ -32,6 +34,7 @@ impl LineStyle {
             LineStyle::ClassName => Color::Yellow,
             LineStyle::MethodName => Color::Green,
             LineStyle::Docstring => Color::Black,
+            LineStyle::Todo => Color::Yellow,
         }
     }
 
@@ -98,6 +101,8 @@ pub struct MetadataBlock {
     pub comment_lines: Vec<MetadataLine>,
     /// Type signature lines (from exported functions, classes, etc.)
     pub type_lines: Vec<MetadataLine>,
+    /// TODO/FIXME marker lines
+    pub todo_lines: Vec<MetadataLine>,
 }
 
 impl MetadataBlock {
@@ -115,6 +120,7 @@ impl MetadataBlock {
         Self {
             comment_lines,
             type_lines: Vec::new(),
+            todo_lines: Vec::new(),
         }
     }
 
@@ -129,22 +135,39 @@ impl MetadataBlock {
         Self {
             comment_lines: Vec::new(),
             type_lines,
+            todo_lines: Vec::new(),
+        }
+    }
+
+    /// Create a metadata block with only TODO lines.
+    pub fn from_todos(todos: &[crate::todos::TodoItem]) -> Self {
+        let todo_lines = todos
+            .iter()
+            .map(|todo| {
+                let content = format!("{}: {} (line {})", todo.marker_type, todo.text, todo.line);
+                MetadataLine::with_style(content, LineStyle::Todo)
+            })
+            .collect();
+        Self {
+            comment_lines: Vec::new(),
+            type_lines: Vec::new(),
+            todo_lines,
         }
     }
 
     /// Check if this block has any content.
     pub fn is_empty(&self) -> bool {
-        self.comment_lines.is_empty() && self.type_lines.is_empty()
+        self.comment_lines.is_empty() && self.type_lines.is_empty() && self.todo_lines.is_empty()
     }
 
-    /// Check if only comments are present (no types).
+    /// Check if only comments are present (no types or todos).
     pub fn has_only_comments(&self) -> bool {
-        !self.comment_lines.is_empty() && self.type_lines.is_empty()
+        !self.comment_lines.is_empty() && self.type_lines.is_empty() && self.todo_lines.is_empty()
     }
 
-    /// Check if only types are present (no comments).
+    /// Check if only types are present (no comments or todos).
     pub fn has_only_types(&self) -> bool {
-        self.comment_lines.is_empty() && !self.type_lines.is_empty()
+        self.comment_lines.is_empty() && !self.type_lines.is_empty() && self.todo_lines.is_empty()
     }
 
     /// Check if both comments and types are present.
@@ -152,7 +175,13 @@ impl MetadataBlock {
         !self.comment_lines.is_empty() && !self.type_lines.is_empty()
     }
 
+    /// Check if todos are present.
+    pub fn has_todos(&self) -> bool {
+        !self.todo_lines.is_empty()
+    }
+
     /// Get lines in the specified order, with an empty line between groups if both exist.
+    /// TODOs are always shown last.
     pub fn lines_in_order(&self, order: MetadataOrder) -> Vec<MetadataLine> {
         let mut result = Vec::new();
 
@@ -170,6 +199,12 @@ impl MetadataBlock {
 
         result.extend(second.iter().cloned());
 
+        // Add TODOs at the end with separator
+        if !self.todo_lines.is_empty() && !result.is_empty() {
+            result.push(MetadataLine::new(String::new())); // empty line separator
+        }
+        result.extend(self.todo_lines.iter().cloned());
+
         result
     }
 
@@ -181,7 +216,10 @@ impl MetadataBlock {
             MetadataOrder::TypesFirst => (&self.type_lines, &self.comment_lines),
         };
 
-        first.first().or_else(|| second.first())
+        first
+            .first()
+            .or_else(|| second.first())
+            .or_else(|| self.todo_lines.first())
     }
 
     /// Check if the first metadata section (based on order) has only one line.
@@ -192,12 +230,25 @@ impl MetadataBlock {
             MetadataOrder::TypesFirst => &self.type_lines,
         };
 
+        // If the first section is empty, check the second
+        if first.is_empty() {
+            let second = match order {
+                MetadataOrder::CommentsFirst => &self.type_lines,
+                MetadataOrder::TypesFirst => &self.comment_lines,
+            };
+            if second.is_empty() {
+                // Only todos present
+                return self.todo_lines.len() == 1;
+            }
+            return second.len() == 1;
+        }
+
         first.len() == 1
     }
 
     /// Total number of lines (not counting separator).
     pub fn total_lines(&self) -> usize {
-        self.comment_lines.len() + self.type_lines.len()
+        self.comment_lines.len() + self.type_lines.len() + self.todo_lines.len()
     }
 }
 
@@ -246,6 +297,8 @@ pub struct MetadataConfig {
     pub comments: bool,
     /// Show type signatures (--types / -t)
     pub types: bool,
+    /// Show TODO/FIXME markers (--todos)
+    pub todos: bool,
     /// Show full metadata blocks (multi-line) vs first line only
     pub full: bool,
     /// Optional prefix to add before each metadata line (e.g., "# ")
@@ -260,6 +313,7 @@ impl MetadataConfig {
         Self {
             comments: true,
             types: false,
+            todos: false,
             full,
             prefix: None,
             order: MetadataOrder::CommentsFirst,
@@ -271,6 +325,7 @@ impl MetadataConfig {
         Self {
             comments: false,
             types: true,
+            todos: false,
             full,
             prefix: None,
             order: MetadataOrder::TypesFirst,
@@ -282,6 +337,7 @@ impl MetadataConfig {
         Self {
             comments: true,
             types: true,
+            todos: false,
             full,
             prefix: None,
             order,
@@ -293,6 +349,7 @@ impl MetadataConfig {
         Self {
             comments: false,
             types: false,
+            todos: false,
             full: false,
             prefix: None,
             order: MetadataOrder::CommentsFirst,

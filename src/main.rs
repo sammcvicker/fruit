@@ -92,6 +92,15 @@ struct Args {
     #[arg(short = 't', long = "types")]
     types: bool,
 
+    /// Show TODO/FIXME/HACK/XXX markers from comments
+    /// When specified, extracts task markers and displays them beneath file entries
+    #[arg(long = "todos")]
+    todos: bool,
+
+    /// Show only files containing TODO/FIXME markers (requires --todos)
+    #[arg(long = "todos-only", requires = "todos")]
+    todos_only: bool,
+
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
     wrap: usize,
@@ -128,23 +137,27 @@ fn main() {
 
     // Determine what metadata to show:
     // - --no-comments: disable comments (for backwards compatibility)
-    // - If neither -c nor -t: show comments (default behavior)
+    // - If neither -c nor -t nor --todos: show comments (default behavior)
     // - If only -t: show types only (full mode implied)
     // - If only -c: show comments
+    // - If only --todos: show todos only
     // - If both -c and -t: show both
+    // - Any combination with --todos: include todos
     let (show_comments, show_types) = if args.no_comments {
         (false, args.types)
     } else {
-        match (args.comments, args.types) {
-            (false, false) => (true, false), // default: comments only
-            (false, true) => (false, true),  // -t alone: types only
-            (true, false) => (true, false),  // -c alone: comments only
-            (true, true) => (true, true),    // both: show both
+        match (args.comments, args.types, args.todos) {
+            (false, false, false) => (true, false), // default: comments only
+            (false, true, _) => (false, true),      // -t specified: types
+            (true, false, _) => (true, false),      // -c specified: comments
+            (true, true, _) => (true, true),        // both: show both
+            (false, false, true) => (false, false), // --todos alone: no comments/types
         }
     };
+    let show_todos = args.todos;
 
-    // When -t is specified (alone or with -c), default to full mode
-    let full_mode = args.full_comment || args.types;
+    // When -t or --todos is specified, default to full mode
+    let full_mode = args.full_comment || args.types || args.todos;
 
     let walker_config = WalkerConfig {
         show_all: args.all,
@@ -152,6 +165,7 @@ fn main() {
         dirs_only: args.dirs_only,
         extract_comments: show_comments,
         extract_types: show_types,
+        extract_todos: show_todos,
         ignore_patterns: args.ignore.clone(),
         parallel_workers: args.jobs,
     };
@@ -205,6 +219,7 @@ fn main() {
         let metadata_config = MetadataConfig {
             comments: show_comments,
             types: show_types,
+            todos: show_todos,
             full: full_mode,
             prefix: args.prefix.clone(),
             order: get_metadata_order(&matches),
