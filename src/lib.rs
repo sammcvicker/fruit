@@ -7,6 +7,9 @@ pub mod output;
 pub mod tree;
 pub mod types;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 pub use comments::extract_first_comment;
 pub use git::{GitFilter, GitignoreFilter};
 pub use metadata::{

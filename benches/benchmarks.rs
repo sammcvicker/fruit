@@ -3,10 +3,9 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use fruit::{
     GitFilter, GitignoreFilter, OutputConfig, StreamingFormatter, StreamingWalker, WalkerConfig,
-    extract_first_comment,
+    extract_first_comment, test_utils::TestRepo,
 };
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 // Sample source code for benchmarking comment extraction
@@ -66,41 +65,19 @@ public class Main {
 }
 "#;
 
-fn create_test_repo_with_files(file_count: usize) -> TempDir {
-    let dir = TempDir::new().unwrap();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
+/// Create a test repository with the specified number of files.
+fn create_test_repo_with_files(file_count: usize) -> TestRepo {
+    let repo = TestRepo::with_git();
 
     // Create files
     for i in 0..file_count {
-        let file_path = dir.path().join(format!("file_{}.rs", i));
-        fs::write(&file_path, format!("//! File {}\nfn main() {{}}", i)).unwrap();
+        repo.add_file(
+            &format!("file_{}.rs", i),
+            &format!("//! File {}\nfn main() {{}}", i),
+        );
     }
 
-    // Add all files
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-
-    dir
+    repo
 }
 
 fn bench_comment_extraction(c: &mut Criterion) {
