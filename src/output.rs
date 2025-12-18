@@ -16,6 +16,51 @@ pub fn print_json(node: &TreeNode) -> io::Result<()> {
 
 const DEFAULT_WRAP_WIDTH: usize = 100;
 
+/// Calculate the continuation prefix for lines below the filename.
+/// Used by both TreeFormatter and StreamingFormatter.
+fn continuation_prefix(prefix: &str, is_last: bool) -> String {
+    if is_last {
+        format!("{}    ", prefix)
+    } else {
+        format!("{}│   ", prefix)
+    }
+}
+
+/// Calculate the available width for text wrapping after accounting for prefixes.
+/// Returns None if wrapping is disabled or the available width is too small.
+fn calculate_wrap_width(
+    base_wrap_width: Option<usize>,
+    continuation_prefix_len: usize,
+    meta_prefix_len: usize,
+) -> Option<usize> {
+    base_wrap_width
+        .map(|w| w.saturating_sub(continuation_prefix_len + meta_prefix_len))
+        .filter(|&w| w > 10)
+}
+
+/// Check if the next non-empty line in a slice is indented relative to current indent.
+fn has_indented_children(lines: &[&crate::metadata::MetadataLine], current_indent: usize) -> bool {
+    lines
+        .iter()
+        .find(|l| !l.content.trim().is_empty())
+        .is_some_and(|next| next.indent > current_indent)
+}
+
+/// Determine if a blank line should be inserted before a baseline item.
+/// Returns true when returning to baseline after indented content or when
+/// this baseline item has indented children (it's a group header).
+fn should_insert_group_separator(
+    current_indent: usize,
+    prev_indent: Option<usize>,
+    has_children: bool,
+) -> bool {
+    if current_indent != 0 {
+        return false;
+    }
+    let dominated_previous = prev_indent.is_some_and(|p| p > 0);
+    (dominated_previous || has_children) && prev_indent.is_some()
+}
+
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
     pub use_color: bool,
@@ -108,87 +153,66 @@ impl TreeFormatter {
             return Ok(());
         }
 
-        // Full mode: multi-line metadata
-        {
-            // Full metadata mode: display in a block beneath filename
-            writeln!(stdout)?; // End the filename line
+        // Full mode: display in a block beneath filename
+        writeln!(stdout)?; // End the filename line
 
-            // Continuation prefix for lines below the filename
-            let continuation_prefix = if is_last {
-                format!("{}    ", prefix)
-            } else {
-                format!("{}│   ", prefix)
-            };
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            self.config.wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
 
-            // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
-            let wrap_width = self
-                .config
-                .wrap_width
-                .map(|w| w.saturating_sub(prefix_width))
-                .filter(|&w| w > 10);
+        // Blank line before block
+        stdout.reset()?;
+        writeln!(stdout, "{}", cont_prefix)?;
 
-            // Blank line before block
-            stdout.reset()?;
-            writeln!(stdout, "{}", continuation_prefix)?;
+        // Metadata lines with per-line styling
+        let line_refs: Vec<_> = lines.iter().collect();
+        let mut prev_indent: Option<usize> = None;
+        for (i, meta_line) in lines.iter().enumerate() {
+            let content = meta_line.content.trim();
 
-            // Metadata lines with per-line styling
-            let mut prev_indent: Option<usize> = None;
-            for (i, meta_line) in lines.iter().enumerate() {
-                let content = meta_line.content.trim();
-
-                // Empty line is a separator
-                if content.is_empty() {
-                    stdout.reset()?;
-                    writeln!(stdout, "{}", continuation_prefix)?;
-                    prev_indent = None; // Reset indent tracking after separator
-                    continue;
-                }
-
-                // Check if next non-empty line is indented (this item has children)
-                let has_indented_children = lines[i + 1..]
-                    .iter()
-                    .find(|l| !l.content.trim().is_empty())
-                    .is_some_and(|next| next.indent > meta_line.indent);
-
-                // Add blank line before baseline items that start a new "group":
-                // - When returning to baseline after indented content
-                // - When this baseline item has indented children (it's a group header)
-                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
-                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
-                    // But not before the very first item
-                    if prev_indent.is_some() {
-                        stdout.reset()?;
-                        writeln!(stdout, "{}", continuation_prefix)?;
-                    }
-                }
-                prev_indent = Some(meta_line.indent);
-
-                let wrapped = if let Some(width) = wrap_width {
-                    wrap_text(content, width)
-                } else {
-                    vec![content.to_string()]
-                };
-
-                for wrapped_line in wrapped.iter() {
-                    stdout.reset()?;
-                    write!(stdout, "{}{}", continuation_prefix, meta_prefix)?;
-                    write_metadata_line_with_symbol(
-                        stdout,
-                        wrapped_line,
-                        meta_line.symbol_name.as_deref(),
-                        meta_line.style.color(),
-                        meta_line.style.is_intense(),
-                        meta_line.indent,
-                    )?;
-                    writeln!(stdout)?;
-                }
+            // Empty line is a separator
+            if content.is_empty() {
+                stdout.reset()?;
+                writeln!(stdout, "{}", cont_prefix)?;
+                prev_indent = None; // Reset indent tracking after separator
+                continue;
             }
 
-            // Blank line after block
-            stdout.reset()?;
-            writeln!(stdout, "{}", continuation_prefix)?;
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&line_refs[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                stdout.reset()?;
+                writeln!(stdout, "{}", cont_prefix)?;
+            }
+            prev_indent = Some(meta_line.indent);
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped.iter() {
+                stdout.reset()?;
+                write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    stdout,
+                    wrapped_line,
+                    meta_line.symbol_name.as_deref(),
+                    meta_line.style.color(),
+                    meta_line.style.is_intense(),
+                    meta_line.indent,
+                )?;
+                writeln!(stdout)?;
+            }
         }
+
+        // Blank line after block
+        stdout.reset()?;
+        writeln!(stdout, "{}", cont_prefix)?;
         stdout.reset()?;
         Ok(())
     }
@@ -224,23 +248,15 @@ impl TreeFormatter {
         // Full mode: display in a block beneath filename
         output.push('\n'); // End the filename line
 
-        // Continuation prefix for lines below the filename
-        let continuation_prefix = if is_last {
-            format!("{}    ", prefix)
-        } else {
-            format!("{}│   ", prefix)
-        };
-
-        // Calculate available width for text wrapping
-        let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
-        let wrap_width = self
-            .config
-            .wrap_width
-            .map(|w| w.saturating_sub(prefix_width))
-            .filter(|&w| w > 10);
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            self.config.wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
 
         // Blank line before block
-        output.push_str(&continuation_prefix);
+        output.push_str(&cont_prefix);
         output.push('\n');
 
         // Metadata lines
@@ -249,7 +265,7 @@ impl TreeFormatter {
 
             // Empty line is a separator
             if content.is_empty() {
-                output.push_str(&continuation_prefix);
+                output.push_str(&cont_prefix);
                 output.push('\n');
                 continue;
             }
@@ -261,7 +277,7 @@ impl TreeFormatter {
             };
 
             for wrapped_line in wrapped.iter() {
-                output.push_str(&continuation_prefix);
+                output.push_str(&cont_prefix);
                 output.push_str(meta_prefix);
                 output.push_str(wrapped_line);
                 output.push('\n');
@@ -269,7 +285,7 @@ impl TreeFormatter {
         }
 
         // Blank line after block
-        output.push_str(&continuation_prefix);
+        output.push_str(&cont_prefix);
         output.push('\n');
     }
 
@@ -490,6 +506,85 @@ impl StreamingFormatter {
         }
     }
 
+    /// Write inline metadata (first line only, on same line as filename).
+    fn write_inline_metadata(
+        &mut self,
+        meta_prefix: &str,
+        first: &crate::metadata::MetadataLine,
+    ) -> io::Result<()> {
+        write!(self.stdout, "  {}", meta_prefix)?;
+        write_metadata_line_with_symbol(
+            &mut self.stdout,
+            first_line(&first.content),
+            first.symbol_name.as_deref(),
+            first.style.color(),
+            first.style.is_intense(),
+            first.indent,
+        )?;
+        writeln!(self.stdout)?;
+        self.stdout.reset()?;
+        Ok(())
+    }
+
+    /// Print metadata lines in a block format with proper indentation and group separators.
+    fn print_metadata_lines_block(
+        &mut self,
+        lines: &[&crate::metadata::MetadataLine],
+        cont_prefix: &str,
+        meta_prefix: &str,
+        wrap_width: Option<usize>,
+    ) -> io::Result<()> {
+        // Blank line before block
+        self.stdout.reset()?;
+        writeln!(self.stdout, "{}", cont_prefix)?;
+
+        let mut prev_indent: Option<usize> = None;
+        for (i, meta_line) in lines.iter().enumerate() {
+            let content = meta_line.content.trim();
+
+            // Empty line is a separator between sections
+            if content.is_empty() {
+                self.stdout.reset()?;
+                writeln!(self.stdout, "{}", cont_prefix)?;
+                prev_indent = None;
+                continue;
+            }
+
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&lines[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                self.stdout.reset()?;
+                writeln!(self.stdout, "{}", cont_prefix)?;
+            }
+            prev_indent = Some(meta_line.indent);
+
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped.iter() {
+                self.stdout.reset()?;
+                write!(self.stdout, "{}{}", cont_prefix, meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    &mut self.stdout,
+                    wrapped_line,
+                    meta_line.symbol_name.as_deref(),
+                    meta_line.style.color(),
+                    meta_line.style.is_intense(),
+                    meta_line.indent,
+                )?;
+                writeln!(self.stdout)?;
+            }
+        }
+
+        // Blank line after block
+        self.stdout.reset()?;
+        writeln!(self.stdout, "{}", cont_prefix)?;
+        Ok(())
+    }
+
     /// Print a metadata block with colors to stdout.
     fn print_metadata_block(
         &mut self,
@@ -502,221 +597,69 @@ impl StreamingFormatter {
             return Ok(());
         }
 
-        let meta_prefix = self.config.metadata.prefix_str();
+        // Copy config values to avoid borrow conflicts
+        let meta_prefix = self.config.metadata.prefix_str().to_string();
         let order = self.config.metadata.order;
+        let base_wrap_width = self.config.wrap_width;
+        let show_full = self.config.show_full();
 
         // Check if the first section (based on order) is a single line
         let first_is_single = block.first_section_is_single_line(order);
         let total_lines = block.total_lines();
 
         // Not in full mode: show first line inline only
-        if !self.config.show_full() {
+        if !show_full {
             if let Some(first) = block.first_line(order) {
-                write!(self.stdout, "  {}", meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    &mut self.stdout,
-                    first_line(&first.content),
-                    first.symbol_name.as_deref(),
-                    first.style.color(),
-                    first.style.is_intense(),
-                    first.indent,
-                )?;
+                self.write_inline_metadata(&meta_prefix, first)?;
+            } else {
+                writeln!(self.stdout)?;
             }
-            writeln!(self.stdout)?;
-            self.stdout.reset()?;
             return Ok(());
         }
 
         // Full mode: show all metadata
-        // Get lines in the configured order (with separator if both types present)
         let lines = block.lines_in_order(order);
 
         // If total is just 1 line, show inline
         if total_lines == 1 {
             if let Some(first) = block.first_line(order) {
-                write!(self.stdout, "  {}", meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    &mut self.stdout,
-                    first_line(&first.content),
-                    first.symbol_name.as_deref(),
-                    first.style.color(),
-                    first.style.is_intense(),
-                    first.indent,
-                )?;
+                self.write_inline_metadata(&meta_prefix, first)?;
+            } else {
+                writeln!(self.stdout)?;
             }
-            writeln!(self.stdout)?;
-            self.stdout.reset()?;
             return Ok(());
         }
+
+        let cont_prefix = continuation_prefix(prefix, is_last);
+        let wrap_width = calculate_wrap_width(
+            base_wrap_width,
+            cont_prefix.chars().count(),
+            meta_prefix.chars().count(),
+        );
 
         // If first section is single line and there's more content, show first inline then rest below
         if first_is_single {
             if let Some(first) = block.first_line(order) {
-                write!(self.stdout, "  {}", meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    &mut self.stdout,
-                    first_line(&first.content),
-                    first.symbol_name.as_deref(),
-                    first.style.color(),
-                    first.style.is_intense(),
-                    first.indent,
-                )?;
+                self.write_inline_metadata(&meta_prefix, first)?;
             }
-            writeln!(self.stdout)?;
-            self.stdout.reset()?;
-
-            // Continuation prefix for lines below the filename
-            let continuation_prefix = if is_last {
-                format!("{}    ", prefix)
-            } else {
-                format!("{}│   ", prefix)
-            };
-
-            // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
-            let wrap_width = self
-                .config
-                .wrap_width
-                .map(|w| w.saturating_sub(prefix_width))
-                .filter(|&w| w > 10);
 
             // Skip the first line (already shown inline) and the separator after it
             let skip_count = if block.has_both() { 2 } else { 1 };
             let remaining_lines: Vec<_> = lines.iter().skip(skip_count).collect();
-
-            // Blank line before remaining content
-            self.stdout.reset()?;
-            writeln!(self.stdout, "{}", continuation_prefix)?;
-
-            let mut prev_indent: Option<usize> = None;
-            for (i, meta_line) in remaining_lines.iter().enumerate() {
-                let content = meta_line.content.trim();
-
-                // Empty line is a separator between sections
-                if content.is_empty() {
-                    self.stdout.reset()?;
-                    writeln!(self.stdout, "{}", continuation_prefix)?;
-                    prev_indent = None;
-                    continue;
-                }
-
-                // Check if next non-empty line is indented (this item has children)
-                let has_indented_children = remaining_lines[i + 1..]
-                    .iter()
-                    .find(|l| !l.content.trim().is_empty())
-                    .is_some_and(|next| next.indent > meta_line.indent);
-
-                // Add blank line before baseline items that start a new "group"
-                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
-                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
-                    if prev_indent.is_some() {
-                        self.stdout.reset()?;
-                        writeln!(self.stdout, "{}", continuation_prefix)?;
-                    }
-                }
-                prev_indent = Some(meta_line.indent);
-
-                let wrapped = if let Some(width) = wrap_width {
-                    wrap_text(content, width)
-                } else {
-                    vec![content.to_string()]
-                };
-
-                for wrapped_line in wrapped.iter() {
-                    self.stdout.reset()?;
-                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
-                    write_metadata_line_with_symbol(
-                        &mut self.stdout,
-                        wrapped_line,
-                        meta_line.symbol_name.as_deref(),
-                        meta_line.style.color(),
-                        meta_line.style.is_intense(),
-                        meta_line.indent,
-                    )?;
-                    writeln!(self.stdout)?;
-                }
-            }
-
-            // Blank line after block
-            self.stdout.reset()?;
-            writeln!(self.stdout, "{}", continuation_prefix)?;
+            self.print_metadata_lines_block(
+                &remaining_lines,
+                &cont_prefix,
+                &meta_prefix,
+                wrap_width,
+            )?;
         } else {
             // First section has multiple lines, show everything below
             writeln!(self.stdout)?; // End the filename line
 
-            // Continuation prefix for lines below the filename
-            let continuation_prefix = if is_last {
-                format!("{}    ", prefix)
-            } else {
-                format!("{}│   ", prefix)
-            };
-
-            // Calculate available width for text wrapping
-            let prefix_width = continuation_prefix.chars().count() + meta_prefix.chars().count();
-            let wrap_width = self
-                .config
-                .wrap_width
-                .map(|w| w.saturating_sub(prefix_width))
-                .filter(|&w| w > 10);
-
-            // Blank line before block
-            self.stdout.reset()?;
-            writeln!(self.stdout, "{}", continuation_prefix)?;
-
-            // Metadata lines with per-line styling
-            let mut prev_indent: Option<usize> = None;
-            for (i, meta_line) in lines.iter().enumerate() {
-                let content = meta_line.content.trim();
-
-                // Empty line is a separator between sections
-                if content.is_empty() {
-                    self.stdout.reset()?;
-                    writeln!(self.stdout, "{}", continuation_prefix)?;
-                    prev_indent = None;
-                    continue;
-                }
-
-                // Check if next non-empty line is indented (this item has children)
-                let has_indented_children = lines[i + 1..]
-                    .iter()
-                    .find(|l| !l.content.trim().is_empty())
-                    .is_some_and(|next| next.indent > meta_line.indent);
-
-                // Add blank line before baseline items that start a new "group"
-                let dominated_previous = prev_indent.is_some_and(|p| p > 0);
-                if meta_line.indent == 0 && (dominated_previous || has_indented_children) {
-                    if prev_indent.is_some() {
-                        self.stdout.reset()?;
-                        writeln!(self.stdout, "{}", continuation_prefix)?;
-                    }
-                }
-                prev_indent = Some(meta_line.indent);
-
-                let wrapped = if let Some(width) = wrap_width {
-                    wrap_text(content, width)
-                } else {
-                    vec![content.to_string()]
-                };
-
-                for wrapped_line in wrapped.iter() {
-                    self.stdout.reset()?;
-                    write!(self.stdout, "{}{}", continuation_prefix, meta_prefix)?;
-                    write_metadata_line_with_symbol(
-                        &mut self.stdout,
-                        wrapped_line,
-                        meta_line.symbol_name.as_deref(),
-                        meta_line.style.color(),
-                        meta_line.style.is_intense(),
-                        meta_line.indent,
-                    )?;
-                    writeln!(self.stdout)?;
-                }
-            }
-
-            // Blank line after block
-            self.stdout.reset()?;
-            writeln!(self.stdout, "{}", continuation_prefix)?;
+            let line_refs: Vec<_> = lines.iter().collect();
+            self.print_metadata_lines_block(&line_refs, &cont_prefix, &meta_prefix, wrap_width)?;
         }
+
         self.stdout.reset()?;
         Ok(())
     }
