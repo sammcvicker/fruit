@@ -389,3 +389,249 @@ fn test_todos_only_in_nested_directories() {
         stdout
     );
 }
+
+// ============================================================================
+// Markdown Output Tests
+// ============================================================================
+
+#[test]
+fn test_markdown_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file("main.rs", "//! CLI entry point\nfn main() {}");
+    repo.add_file("src/lib.rs", "//! Library module\npub mod foo;");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown"]);
+    assert!(success, "fruit --markdown should succeed");
+
+    // Verify markdown structure - directories should be bold with trailing slash
+    assert!(
+        stdout.contains("**"),
+        "should have bold formatting for directories: {}",
+        stdout
+    );
+
+    // Files should be in backticks
+    assert!(
+        stdout.contains("`main.rs`"),
+        "should have filename in backticks: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("`lib.rs`"),
+        "should have filename in backticks: {}",
+        stdout
+    );
+
+    // Comments should be extracted and shown
+    assert!(
+        stdout.contains("CLI entry point"),
+        "should include comment for main.rs: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Library module"),
+        "should include comment for lib.rs: {}",
+        stdout
+    );
+
+    // Should have summary line in italics
+    assert!(
+        stdout.contains("*1 directories, 2 files*"),
+        "should have italicized summary: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_with_types() {
+    let repo = TestRepo::with_git();
+    repo.add_file("lib.rs", "pub fn hello() {}\npub struct Config {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "-t"]);
+    assert!(success);
+
+    // Should show type signatures
+    assert!(
+        stdout.contains("pub fn hello"),
+        "should show function signature: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("pub struct Config"),
+        "should show struct signature: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_no_comments() {
+    let repo = TestRepo::with_git();
+    repo.add_file("main.rs", "//! Has comment\nfn main() {}");
+    repo.add_file("empty.rs", "fn no_comment() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "--no-comments"]);
+    assert!(success);
+
+    // Files should still be shown
+    assert!(
+        stdout.contains("`main.rs`"),
+        "should show main.rs: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("`empty.rs`"),
+        "should show empty.rs: {}",
+        stdout
+    );
+
+    // Comments should NOT be extracted
+    assert!(
+        !stdout.contains("Has comment"),
+        "should not extract comments with --no-comments: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_nested_structure() {
+    let repo = TestRepo::with_git();
+    repo.add_file("src/main.rs", "//! Entry point\nfn main() {}");
+    repo.add_file("src/lib.rs", "//! Library\npub mod foo;");
+    repo.add_file("src/foo/mod.rs", "//! Foo module\npub fn foo() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown"]);
+    assert!(success);
+
+    // Should show directory structure
+    assert!(
+        stdout.contains("**src/**"),
+        "should show src directory: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("**foo/**"),
+        "should show foo directory: {}",
+        stdout
+    );
+
+    // Files should be present
+    assert!(
+        stdout.contains("`main.rs`"),
+        "should show main.rs: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("`mod.rs`"),
+        "should show mod.rs: {}",
+        stdout
+    );
+
+    // Comments should be extracted
+    assert!(
+        stdout.contains("Entry point"),
+        "should show main.rs comment: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Foo module"),
+        "should show mod.rs comment: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_with_todos() {
+    let repo = TestRepo::with_git();
+    repo.add_file("has_todo.rs", "// TODO: fix this\nfn foo() {}");
+    repo.add_file("has_fixme.py", "# FIXME: broken\ndef baz(): pass");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "--todos"]);
+    assert!(success);
+
+    // Should show TODO markers
+    assert!(
+        stdout.contains("TODO: fix this"),
+        "should show TODO marker: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("FIXME: broken"),
+        "should show FIXME marker: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_todos_only() {
+    let repo = TestRepo::with_git();
+    repo.add_file("has_todo.rs", "// TODO: fix this\nfn foo() {}");
+    repo.add_file("no_todo.rs", "// Regular comment\nfn bar() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "--todos", "--todos-only"]);
+    assert!(success);
+
+    // Should show file with TODO
+    assert!(
+        stdout.contains("`has_todo.rs`"),
+        "should show file with TODO: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("TODO: fix this"),
+        "should show TODO marker: {}",
+        stdout
+    );
+
+    // Should NOT show file without TODO
+    assert!(
+        !stdout.contains("`no_todo.rs`"),
+        "should not show file without TODO: {}",
+        stdout
+    );
+
+    // Should show correct file count
+    assert!(
+        stdout.contains("*0 directories, 1 files*"),
+        "should show 1 file: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_markdown_multiline_comments_full_mode() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "lib.rs",
+        r#"//! First line of comment
+//! Second line of comment
+//! Third line of comment
+pub fn main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "--full-comment"]);
+    assert!(success);
+
+    // Should show all comment lines
+    assert!(
+        stdout.contains("First line of comment"),
+        "should show first line: {}",
+        stdout
+    );
+
+    // In full mode, additional lines should be in blockquote format
+    assert!(
+        stdout.contains("> "),
+        "should use blockquote for additional lines: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Second line of comment"),
+        "should show second line: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Third line of comment"),
+        "should show third line: {}",
+        stdout
+    );
+}
