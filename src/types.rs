@@ -65,9 +65,18 @@ static RUST_PUB_TYPE: LazyLock<Regex> = LazyLock::new(|| {
 static RUST_PUB_CONST: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").expect("RUST_PUB_CONST regex is invalid")
 });
+static RUST_IMPL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^impl(?:\s*<[^>]+>)?\s+(\w+)").expect("RUST_IMPL regex is invalid")
+});
+static RUST_IMPL_TRAIT_FOR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^impl(?:\s*<[^>]+>)?\s+(\w+)\s+for\s+(\w+)")
+        .expect("RUST_IMPL_TRAIT_FOR regex is invalid")
+});
 
 fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
+    let mut in_impl_block = false;
+    let mut impl_indent: usize = 0;
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -83,37 +92,80 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
 
         let indent = calculate_indent(line);
 
-        // Check each pattern - capture group index varies for fn (has optional async)
-        // Use pattern matching to safely handle capture groups
-        if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+        // Check for end of impl block (closing brace at same or lower indent)
+        if in_impl_block && trimmed == "}" && indent <= impl_indent {
+            in_impl_block = false;
+        }
+
+        // Check for impl blocks first (impl Trait for Type or impl Type)
+        if let Some(caps) = RUST_IMPL_TRAIT_FOR.captures(trimmed) {
+            // impl Trait for Type
+            if let (Some(full), Some(trait_match), Some(type_match)) =
+                (caps.get(0), caps.get(1), caps.get(2))
+            {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                let symbol = format!(
+                    "{} for {}",
+                    trait_match.as_str(),
+                    type_match.as_str()
+                );
+                signatures.push((sig, symbol, indent));
+                in_impl_block = true;
+                impl_indent = indent;
             }
-        } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+        } else if let Some(caps) = RUST_IMPL.captures(trimmed) {
+            // impl Type
+            if let (Some(full), Some(type_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push((sig, type_match.as_str().to_string(), indent));
+                in_impl_block = true;
+                impl_indent = indent;
             }
-        } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+        } else if in_impl_block {
+            // Inside impl block, capture pub fn and fn (both public and private associated functions)
+            if let Some(caps) = Regex::new(r"^(pub\s+)?(async\s+)?fn\s+(\w+)[^{;]*")
+                .unwrap()
+                .captures(trimmed)
+            {
+                if let (Some(full), Some(fn_name)) = (caps.get(0), caps.get(3)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, fn_name.as_str().to_string(), indent));
+                }
             }
-        } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
-            }
-        } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
-            }
-        } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
-            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+        } else {
+            // Top-level declarations (not inside impl block)
+            // Check each pattern - capture group index varies for fn (has optional async)
+            // Use pattern matching to safely handle capture groups
+            if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
+            } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
+            } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
+            } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
+            } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
+            } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
+                if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                    let sig = clean_signature(full.as_str());
+                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                }
             }
         }
     }
@@ -835,5 +887,191 @@ struct Private {}
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert!(sigs.is_empty());
+    }
+
+    #[test]
+    fn test_rust_impl_blocks() {
+        let content = r#"
+pub struct Config {
+    pub host: String,
+    pub port: u16,
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Config {
+            host: "localhost".to_string(),
+            port: 8080,
+        }
+    }
+
+    pub fn with_port(port: u16) -> Self {
+        Config {
+            host: "localhost".to_string(),
+            port,
+        }
+    }
+
+    fn private_method(&self) -> bool {
+        true
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config::new()
+    }
+}
+
+pub async fn standalone_fn() -> Result<(), Error> {
+    Ok(())
+}
+"#;
+        let sigs = extract_rust_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 8);
+
+        // pub struct Config
+        assert!(sigs[0].0.starts_with("pub struct Config"));
+        assert_eq!(sigs[0].1, "Config");
+
+        // impl Config
+        assert!(sigs[1].0.starts_with("impl Config"));
+        assert_eq!(sigs[1].1, "Config");
+
+        // pub fn new() -> Self
+        assert!(sigs[2].0.starts_with("pub fn new() -> Self"));
+        assert_eq!(sigs[2].1, "new");
+        assert!(sigs[2].2 > sigs[1].2); // Should be indented relative to impl
+
+        // pub fn with_port(port: u16) -> Self
+        assert!(sigs[3].0.starts_with("pub fn with_port(port: u16) -> Self"));
+        assert_eq!(sigs[3].1, "with_port");
+
+        // fn private_method(&self) -> bool
+        assert!(sigs[4].0.starts_with("fn private_method(&self) -> bool"));
+        assert_eq!(sigs[4].1, "private_method");
+
+        // impl Default for Config
+        assert!(sigs[5].0.starts_with("impl Default for Config"));
+        assert_eq!(sigs[5].1, "Default for Config");
+
+        // fn default() -> Self
+        assert!(sigs[6].0.starts_with("fn default() -> Self"));
+        assert_eq!(sigs[6].1, "default");
+
+        // pub async fn standalone_fn() -> Result<(), Error>
+        assert!(sigs[7].0.starts_with("pub async fn standalone_fn"));
+        assert_eq!(sigs[7].1, "standalone_fn");
+    }
+
+    #[test]
+    fn test_rust_impl_with_generics() {
+        let content = r#"
+pub struct Container<T> {
+    value: T,
+}
+
+impl<T: Clone> Container<T> {
+    pub fn new(value: T) -> Self {
+        Container { value }
+    }
+
+    pub fn get(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T: Default> Default for Container<T> {
+    fn default() -> Self {
+        Container {
+            value: T::default(),
+        }
+    }
+}
+"#;
+        let sigs = extract_rust_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 6);
+
+        // pub struct Container<T>
+        assert!(sigs[0].0.starts_with("pub struct Container"));
+        assert_eq!(sigs[0].1, "Container");
+
+        // impl<T: Clone> Container<T>
+        assert!(sigs[1].0.starts_with("impl"));
+        assert_eq!(sigs[1].1, "Container");
+
+        // pub fn new(value: T) -> Self
+        assert!(sigs[2].0.starts_with("pub fn new(value: T) -> Self"));
+        assert_eq!(sigs[2].1, "new");
+
+        // pub fn get(&self) -> &T
+        assert!(sigs[3].0.starts_with("pub fn get(&self) -> &T"));
+        assert_eq!(sigs[3].1, "get");
+
+        // impl<T: Default> Default for Container<T>
+        assert!(sigs[4].0.starts_with("impl"));
+        assert_eq!(sigs[4].1, "Default for Container");
+
+        // fn default() -> Self
+        assert!(sigs[5].0.starts_with("fn default() -> Self"));
+        assert_eq!(sigs[5].1, "default");
+    }
+
+    #[test]
+    fn test_rust_nested_impl_blocks() {
+        // Test that we don't get confused by nested blocks
+        let content = r#"
+pub struct Outer {
+    inner: Inner,
+}
+
+impl Outer {
+    pub fn new() -> Self {
+        Outer {
+            inner: Inner::new(),
+        }
+    }
+
+    pub fn process(&self) {
+        if true {
+            // nested block
+            let x = 5;
+        }
+    }
+}
+"#;
+        let sigs = extract_rust_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 4);
+
+        assert!(sigs[0].0.starts_with("pub struct Outer"));
+        assert!(sigs[1].0.starts_with("impl Outer"));
+        assert!(sigs[2].0.starts_with("pub fn new() -> Self"));
+        assert!(sigs[3].0.starts_with("pub fn process(&self)"));
+    }
+
+    #[test]
+    fn test_rust_async_in_impl() {
+        let content = r#"
+pub struct AsyncService {}
+
+impl AsyncService {
+    pub async fn fetch(&self, url: &str) -> Result<String, Error> {
+        Ok(String::new())
+    }
+
+    async fn internal_fetch(&self) -> String {
+        String::new()
+    }
+}
+"#;
+        let sigs = extract_rust_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 4);
+
+        assert!(sigs[0].0.starts_with("pub struct AsyncService"));
+        assert!(sigs[1].0.starts_with("impl AsyncService"));
+        assert!(sigs[2].0.starts_with("pub async fn fetch"));
+        assert_eq!(sigs[2].1, "fetch");
+        assert!(sigs[3].0.starts_with("async fn internal_fetch"));
+        assert_eq!(sigs[3].1, "internal_fetch");
     }
 }

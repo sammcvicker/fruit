@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Rust type extraction now captures impl blocks and associated functions (#117)
+  - Extracts `impl Type` blocks and their methods
+  - Extracts `impl Trait for Type` blocks and their trait implementations
+  - Captures both `pub fn` and private `fn` methods inside impl blocks
+  - Supports generic impl blocks (e.g., `impl<T: Clone> Container<T>`)
+  - Handles async functions within impl blocks
+  - Methods are properly indented relative to their impl block
+
 ### Fixed
 
 - Python type extraction now captures decorated functions (#116)
