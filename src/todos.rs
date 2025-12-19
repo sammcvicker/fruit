@@ -41,66 +41,12 @@ pub struct TodoItem {
 /// - `FIXME - memory leak` → type="FIXME", text="memory leak"
 /// - `// TODO: implement` → type="TODO", text="implement"
 pub fn extract_todos(path: &Path) -> Option<Vec<TodoItem>> {
-    let (content, extension) = read_source_file(path)?;
-
-    // Only process files with recognized extensions
-    if !is_supported_extension(extension) {
-        return None;
-    }
+    // read_source_file handles extension filtering and case-normalization
+    let (content, _extension) = read_source_file(path)?;
 
     let todos = extract_todos_from_content(&content);
 
     if todos.is_empty() { None } else { Some(todos) }
-}
-
-/// Check if an extension is supported for TODO extraction.
-fn is_supported_extension(ext: &str) -> bool {
-    matches!(
-        ext,
-        "rs" | "py"
-            | "js"
-            | "jsx"
-            | "ts"
-            | "tsx"
-            | "mjs"
-            | "cjs"
-            | "go"
-            | "c"
-            | "h"
-            | "cpp"
-            | "hpp"
-            | "cc"
-            | "cxx"
-            | "rb"
-            | "sh"
-            | "bash"
-            | "zsh"
-            | "java"
-            | "kt"
-            | "kts"
-            | "swift"
-            | "php"
-            | "cs"
-            | "lua"
-            | "pl"
-            | "pm"
-            | "r"
-            | "R"
-            | "scala"
-            | "clj"
-            | "cljs"
-            | "ex"
-            | "exs"
-            | "erl"
-            | "hrl"
-            | "hs"
-            | "ml"
-            | "mli"
-            | "fs"
-            | "fsx"
-            | "vue"
-            | "svelte"
-    )
 }
 
 /// Extract TODO items from file content.

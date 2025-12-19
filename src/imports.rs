@@ -54,10 +54,11 @@ impl FileImports {
 pub fn extract_imports(path: &Path) -> Option<FileImports> {
     let (content, extension) = read_source_file(path)?;
 
+    // Extension is already normalized to lowercase by read_source_file
     let imports = match extension {
         "rs" => extract_rust_imports(&content),
-        "ts" | "tsx" | "mts" | "cts" => extract_typescript_imports(&content),
-        "js" | "jsx" | "mjs" | "cjs" => extract_javascript_imports(&content),
+        "ts" => extract_typescript_imports(&content),
+        "js" => extract_javascript_imports(&content),
         "py" => extract_python_imports(&content),
         "go" => extract_go_imports(&content),
         _ => None,
@@ -282,9 +283,8 @@ fn categorize_js_import(module: &str, imports: &mut FileImports) {
 static PY_IMPORT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^import\s+(\w+)").expect("PY_IMPORT regex is invalid"));
 
-static PY_FROM_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^from\s+(\.*)(\w+)?").expect("PY_FROM_IMPORT regex is invalid")
-});
+static PY_FROM_IMPORT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^from\s+(\.*)(\w+)?").expect("PY_FROM_IMPORT regex is invalid"));
 
 // Python standard library modules (comprehensive list of top-level modules)
 const PYTHON_STDLIB: &[&str] = &[
