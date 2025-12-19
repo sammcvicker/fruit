@@ -283,4 +283,88 @@ mod tests {
         let wrapped = wrap_text(mixed, 8);
         assert_eq!(wrapped, vec!["Hello 世界", "🎉"]);
     }
+
+    #[test]
+    fn test_has_indented_children_with_children() {
+        use crate::metadata::{LineStyle, MetadataLine};
+
+        let lines = vec![
+            MetadataLine {
+                content: "child".to_string(),
+                style: LineStyle::TypeSignature,
+                symbol_name: None,
+                indent: 4,
+            },
+        ];
+        let line_refs: Vec<&MetadataLine> = lines.iter().collect();
+        assert!(has_indented_children(&line_refs, 0));
+    }
+
+    #[test]
+    fn test_has_indented_children_no_children() {
+        use crate::metadata::{LineStyle, MetadataLine};
+
+        let lines = vec![
+            MetadataLine {
+                content: "sibling".to_string(),
+                style: LineStyle::TypeSignature,
+                symbol_name: None,
+                indent: 0,
+            },
+        ];
+        let line_refs: Vec<&MetadataLine> = lines.iter().collect();
+        assert!(!has_indented_children(&line_refs, 0));
+    }
+
+    #[test]
+    fn test_has_indented_children_empty() {
+        let lines: Vec<&crate::metadata::MetadataLine> = vec![];
+        assert!(!has_indented_children(&lines, 0));
+    }
+
+    #[test]
+    fn test_has_indented_children_skips_empty_lines() {
+        use crate::metadata::{LineStyle, MetadataLine};
+
+        let lines = vec![
+            MetadataLine {
+                content: "   ".to_string(), // Empty/whitespace only
+                style: LineStyle::TypeSignature,
+                symbol_name: None,
+                indent: 0,
+            },
+            MetadataLine {
+                content: "child".to_string(),
+                style: LineStyle::TypeSignature,
+                symbol_name: None,
+                indent: 4,
+            },
+        ];
+        let line_refs: Vec<&MetadataLine> = lines.iter().collect();
+        // Should skip the empty line and find the indented child
+        assert!(has_indented_children(&line_refs, 0));
+    }
+
+    #[test]
+    fn test_should_insert_group_separator_basic() {
+        // At baseline (indent=0), no previous line - no separator
+        assert!(!should_insert_group_separator(0, None, false));
+
+        // At baseline, previous was at baseline, no children - no separator
+        assert!(!should_insert_group_separator(0, Some(0), false));
+
+        // At baseline, previous was indented - should insert separator
+        assert!(should_insert_group_separator(0, Some(4), false));
+
+        // At baseline, has children (is a group header) - should insert separator
+        assert!(should_insert_group_separator(0, Some(0), true));
+    }
+
+    #[test]
+    fn test_should_insert_group_separator_not_baseline() {
+        // Not at baseline (indent > 0) - never insert separator
+        assert!(!should_insert_group_separator(4, None, false));
+        assert!(!should_insert_group_separator(4, Some(0), false));
+        assert!(!should_insert_group_separator(4, Some(4), true));
+    }
 }
