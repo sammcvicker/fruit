@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::file_utils::read_source_file;
+use crate::language::Language;
 
 /// Categorized imports from a source file.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -52,15 +53,15 @@ impl FileImports {
 
 /// Extract imports from a file.
 pub fn extract_imports(path: &Path) -> Option<FileImports> {
-    let (content, extension) = read_source_file(path)?;
+    let (content, _extension) = read_source_file(path)?;
+    let language = Language::from_path(path)?;
 
-    // Extension is already normalized to lowercase by read_source_file
-    let imports = match extension {
-        "rs" => extract_rust_imports(&content),
-        "ts" => extract_typescript_imports(&content),
-        "js" => extract_javascript_imports(&content),
-        "py" => extract_python_imports(&content),
-        "go" => extract_go_imports(&content),
+    let imports = match language {
+        Language::Rust => extract_rust_imports(&content),
+        Language::TypeScript => extract_typescript_imports(&content),
+        Language::JavaScript => extract_javascript_imports(&content),
+        Language::Python => extract_python_imports(&content),
+        Language::Go => extract_go_imports(&content),
         _ => None,
     };
 

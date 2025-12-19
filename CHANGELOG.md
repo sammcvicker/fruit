@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Centralized language detection and extension mapping into `Language` enum (#109)
+  - Created new `language.rs` module with `Language` enum for all supported languages
+  - Removed duplicated extension-to-language mappings from `comments.rs`, `types.rs`, `imports.rs`, and `file_utils.rs`
+  - Extension detection now uses single source of truth: `Language::from_extension()`
+  - Improves maintainability: adding a new language now requires changes in one place only
+  - Better extensibility: clearer API for future plugin support
+
 ### Added
 
 - `--max-file-size` flag to configure maximum file size for metadata extraction (#76)

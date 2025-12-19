@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::file_utils::read_source_file;
+use crate::language::Language;
 use crate::metadata::{MetadataBlock, MetadataExtractor};
 
 /// Calculate the indentation level of a line (number of spaces, tabs = 4 spaces).
@@ -28,15 +29,15 @@ fn calculate_indent(line: &str) -> usize {
 /// Returns a list of (signature, symbol_name, indent_level) tuples.
 /// indent_level is the number of spaces (tabs are converted to 4 spaces).
 pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
-    let (content, extension) = read_source_file(path)?;
+    let (content, _extension) = read_source_file(path)?;
+    let language = Language::from_path(path)?;
 
-    // Extension is already normalized to lowercase by read_source_file
-    let signatures = match extension {
-        "rs" => extract_rust_signatures(&content),
-        "ts" => extract_typescript_signatures(&content),
-        "js" => extract_javascript_signatures(&content),
-        "py" => extract_python_signatures(&content),
-        "go" => extract_go_signatures(&content),
+    let signatures = match language {
+        Language::Rust => extract_rust_signatures(&content),
+        Language::TypeScript => extract_typescript_signatures(&content),
+        Language::JavaScript => extract_javascript_signatures(&content),
+        Language::Python => extract_python_signatures(&content),
+        Language::Go => extract_go_signatures(&content),
         _ => None,
     };
 

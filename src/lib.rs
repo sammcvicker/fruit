@@ -4,6 +4,7 @@ pub mod comments;
 pub mod file_utils;
 pub mod git;
 pub mod imports;
+pub mod language;
 pub mod metadata;
 pub mod output;
 pub mod stats;
@@ -17,6 +18,7 @@ pub mod test_utils;
 pub use comments::extract_first_comment;
 pub use git::{GitFilter, GitignoreFilter};
 pub use imports::{FileImports, extract_imports};
+pub use language::Language;
 pub use metadata::{
     CommentExtractor, LineStyle, MetadataBlock, MetadataConfig, MetadataExtractor, MetadataLine,
     MetadataOrder,

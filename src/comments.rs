@@ -28,6 +28,7 @@
 use std::path::Path;
 
 use crate::file_utils::read_source_file;
+use crate::language::Language;
 
 /// Extract the first documentation comment from a source file.
 ///
@@ -59,24 +60,23 @@ use crate::file_utils::read_source_file;
 /// Files larger than 1MB are skipped to prevent memory issues
 /// when processing large generated or binary files with code extensions.
 pub fn extract_first_comment(path: &Path) -> Option<String> {
-    let (content, extension) = read_source_file(path)?;
+    let (content, _extension) = read_source_file(path)?;
+    let language = Language::from_path(path)?;
 
-    // Extension is already normalized to lowercase by read_source_file
-    match extension {
-        "rs" => extract_rust_comment(&content),
-        "py" => extract_python_docstring(&content),
-        "js" | "ts" => extract_js_comment(&content),
-        "go" => extract_go_comment(&content),
-        "c" | "cpp" => extract_c_comment(&content),
-        "rb" => extract_ruby_comment(&content),
-        "sh" => extract_shell_comment(&content),
+    match language {
+        Language::Rust => extract_rust_comment(&content),
+        Language::Python => extract_python_docstring(&content),
+        Language::JavaScript | Language::TypeScript => extract_js_comment(&content),
+        Language::Go => extract_go_comment(&content),
+        Language::C | Language::Cpp => extract_c_comment(&content),
+        Language::Ruby => extract_ruby_comment(&content),
+        Language::Shell => extract_shell_comment(&content),
         // Java, Kotlin, Swift use JavaDoc-style /** */ comments
-        "java" | "kt" | "swift" => extract_javadoc_comment(&content),
+        Language::Java | Language::Kotlin | Language::Swift => extract_javadoc_comment(&content),
         // PHP uses PHPDoc /** */ and also # comments
-        "php" => extract_php_comment(&content),
+        Language::PHP => extract_php_comment(&content),
         // C# uses /// XML doc comments
-        "cs" => extract_csharp_comment(&content),
-        _ => None,
+        Language::CSharp => extract_csharp_comment(&content),
     }
 }
 

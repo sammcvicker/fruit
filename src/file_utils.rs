@@ -6,6 +6,8 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::language::Language;
+
 /// Default maximum file size for extraction operations (1MB).
 /// Files larger than this are skipped to prevent excessive memory usage.
 pub const DEFAULT_MAX_FILE_SIZE: u64 = 1_000_000;
@@ -29,70 +31,11 @@ pub fn get_max_file_size() -> u64 {
 /// Returns a static string reference for recognized extensions,
 /// normalizing variants to their canonical form (e.g., ".RS" -> "rs").
 /// Returns `None` for unrecognized extensions.
+///
+/// Note: This function now uses the Language enum internally to ensure
+/// consistency across all extension mappings.
 pub fn normalize_extension(ext: &str) -> Option<&'static str> {
-    let ext_lower = ext.to_lowercase();
-    match ext_lower.as_str() {
-        // Rust
-        "rs" => Some("rs"),
-        // Python
-        "py" | "pyw" | "pyi" => Some("py"),
-        // JavaScript
-        "js" | "jsx" | "mjs" | "cjs" => Some("js"),
-        // TypeScript
-        "ts" | "tsx" | "mts" | "cts" => Some("ts"),
-        // Go
-        "go" => Some("go"),
-        // C
-        "c" | "h" => Some("c"),
-        // C++
-        "cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh" => Some("cpp"),
-        // C#
-        "cs" => Some("cs"),
-        // Java
-        "java" => Some("java"),
-        // Ruby
-        "rb" => Some("rb"),
-        // PHP
-        "php" => Some("php"),
-        // Shell
-        "sh" | "bash" | "zsh" | "fish" => Some("sh"),
-        // Swift
-        "swift" => Some("swift"),
-        // Kotlin
-        "kt" | "kts" => Some("kt"),
-        // Scala
-        "scala" | "sc" => Some("scala"),
-        // Lua
-        "lua" => Some("lua"),
-        // Perl
-        "pl" | "pm" => Some("pl"),
-        // R
-        "r" => Some("r"),
-        // Julia
-        "jl" => Some("jl"),
-        // Dart
-        "dart" => Some("dart"),
-        // Elixir
-        "ex" | "exs" => Some("ex"),
-        // Erlang
-        "erl" | "hrl" => Some("erl"),
-        // Haskell
-        "hs" | "lhs" => Some("hs"),
-        // OCaml
-        "ml" | "mli" => Some("ml"),
-        // F#
-        "fs" | "fsi" | "fsx" => Some("fs"),
-        // Clojure
-        "clj" | "cljs" | "cljc" | "edn" => Some("clj"),
-        // Zig
-        "zig" => Some("zig"),
-        // Vue
-        "vue" => Some("vue"),
-        // Svelte
-        "svelte" => Some("svelte"),
-        // Unrecognized extension
-        _ => None,
-    }
+    Language::from_extension(ext).map(|lang| lang.canonical_extension())
 }
 
 /// Read a source file if it meets size requirements.
