@@ -4,10 +4,20 @@
 //! Supported markers: TODO, FIXME, HACK, XXX, BUG, NOTE
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::file_utils::read_source_file;
+
+/// Pattern matches TODO, FIXME, HACK, XXX, BUG, NOTE at the start of comment text
+/// followed by colon and the actual message.
+static TODO_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)",
+    )
+    .expect("TODO_PATTERN regex is invalid")
+});
 
 /// A single TODO/FIXME marker extracted from a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,15 +61,6 @@ pub fn extract_todos(path: &Path) -> Option<Vec<TodoItem>> {
 
 /// Extract TODO items from file content.
 fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
-    // Pattern matches TODO, FIXME, HACK, XXX, BUG, NOTE at the start of comment text
-    // followed by colon and the actual message.
-    // The marker should appear after comment prefix, not in the middle of documentation.
-    // We require a colon to distinguish actual TODOs from mentions in documentation.
-    let pattern = Regex::new(
-        r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)",
-    )
-    .expect("valid regex");
-
     let mut todos = Vec::new();
 
     for (line_idx, line) in content.lines().enumerate() {
@@ -69,7 +70,7 @@ fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
             continue;
         }
 
-        if let Some(caps) = pattern.captures(line) {
+        if let Some(caps) = TODO_PATTERN.captures(line) {
             // Group 1 contains the marker type (TODO, FIXME, etc.)
             // Group 2 contains the text after the colon
             let marker_type = caps
