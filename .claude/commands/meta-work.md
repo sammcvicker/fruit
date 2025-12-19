@@ -45,8 +45,28 @@ If the previous worker left WIP (incomplete) work:
 
 Use the **Task tool** with:
 - `subagent_type`: `"worker"`
-- `prompt`: The issue number to work on (e.g., `"208"`)
+- `prompt`: The issue number, optionally with context (see examples below)
 - `description`: `"Work on issue #<number>"`
+
+**Simple case** (most issues):
+```
+prompt: "208"
+```
+
+**With context** (when recent work may be relevant):
+```
+prompt: "109 - just completed 108 which refactored the formatter module; this issue touches the same code, check for conflicts or reuse opportunities"
+```
+
+```
+prompt: "215 - this is a performance issue; prefer simple optimizations over complex rewrites"
+```
+
+**When to add context:**
+- Previous issue touched related files or modules
+- The issue requires a specific approach (e.g., "add tests only, don't change implementation")
+- There's information from a failed previous attempt
+- You noticed something relevant while reviewing issues
 
 The worker subagent (defined in `.claude/agents/worker.md`) knows how to pick up an issue, implement it, and close it out.
 
@@ -54,18 +74,27 @@ Wait for the worker to complete.
 
 ### 4. Evaluate Worker Output
 
-After the worker returns, assess what happened:
+After the worker returns, **always verify** what actually happened (workers occasionally make mistakes like merging to wrong branch):
 
 ```bash
 git status
-git log --oneline -5
-gh issue view <number> --json state,comments
+git branch --show-current
+git log --oneline --stat -3
+gh issue view <number> --json state
 ```
 
-Determine:
-- **Success**: Issue was closed, changes merged to develop. Proceed to next issue.
+Check:
+- Are we on `develop` (or expected branch)?
+- Is the working tree clean?
+- Does the commit reference the correct issue number?
+- Were the expected files modified?
+- Is the issue actually closed?
+
+Determine outcome:
+- **Success**: Issue closed, changes merged to develop, working tree clean. Proceed to next issue.
 - **WIP**: Worker committed but didn't merge (too large, blocked, needs discussion). Decide whether to continue or move on.
 - **Failed**: Worker couldn't make progress. Note the blocker and try a different issue.
+- **Mistake**: Worker made an error (wrong branch, didn't close issue, etc.). Fix it before proceeding.
 
 ### 5. Decide Next Action
 

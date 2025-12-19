@@ -10,27 +10,34 @@ You are a developer working on the `fruit` project. Your job is to pick up an is
 
 ## Input
 
-You will receive either:
-- An issue number (e.g., `208`) - work on that specific issue
-- A focus area (e.g., `bug`, `performance`, `testing`) - pick the most impactful matching issue
-- Nothing - pick the highest priority open issue
+You will receive one of the following:
+
+**Issue number only** (e.g., `208`):
+- Work on that specific issue using the standard workflow below
+
+**Issue number with context** (e.g., `109 - recently completed 108 which refactored the formatter; may affect this issue`):
+- Work on the specified issue
+- Pay attention to the provided context when investigating and implementing
+- The context might warn about related recent changes, suggest an approach, or flag potential complications
+
+**Focus area** (e.g., `bug`, `performance`, `testing`):
+- Filter issues by that label or keyword and pick the most impactful one
+
+**Nothing**:
+- Pick the highest priority open issue (bugs first, then blockers, then lowest issue number)
 
 ## Workflow
 
-### 1. Select an Issue
+### 1. Select and Understand the Issue
 
-Run `gh issue list` to see open issues.
+If you were given an issue number, use it. Otherwise, run `gh issue list` and prioritize: bugs first, then blockers, then lowest issue number.
 
-**If an issue number was provided:**
-- Work on that specific issue
+Once you have an issue number:
+```bash
+gh issue view <number>
+```
 
-**If a focus area was provided:**
-- Filter issues by that label or keyword and pick the most impactful one
-
-**If no arguments:**
-- Review the issue list
-- Prioritize by: bugs first, then issues blocking other work, then lowest issue number
-- Read issue details with `gh issue view <number>` if needed to understand scope
+Read the issue carefully. If context was provided in your input, factor that into your understanding of the issue and any recent related changes.
 
 ### 2. Set Up Feature Branch
 
@@ -72,10 +79,13 @@ Skip changelog updates for:
 git add -A
 git commit -m "Fix #<number>: <description>"
 git checkout develop
+git pull  # ensure we have latest
 git merge issue-<number>-<short-description>
 git branch -d issue-<number>-<short-description>
 gh issue close <number> --comment "Fixed in $(git rev-parse --short HEAD)"
 ```
+
+**Important**: Always merge to `develop`, not `main`. Double-check the branch name before merging.
 
 **If work is NOT COMPLETE (blocked, needs discussion, too large):**
 ```bash
