@@ -30,10 +30,11 @@ fn calculate_indent(line: &str) -> usize {
 pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
     let (content, extension) = read_source_file(path)?;
 
+    // Extension is already normalized to lowercase by read_source_file
     let signatures = match extension {
         "rs" => extract_rust_signatures(&content),
-        "ts" | "tsx" | "mts" | "cts" => extract_typescript_signatures(&content),
-        "js" | "jsx" | "mjs" | "cjs" => extract_javascript_signatures(&content),
+        "ts" => extract_typescript_signatures(&content),
+        "js" => extract_javascript_signatures(&content),
         "py" => extract_python_signatures(&content),
         "go" => extract_go_signatures(&content),
         _ => None,

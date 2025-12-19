@@ -61,16 +61,17 @@ use crate::file_utils::read_source_file;
 pub fn extract_first_comment(path: &Path) -> Option<String> {
     let (content, extension) = read_source_file(path)?;
 
+    // Extension is already normalized to lowercase by read_source_file
     match extension {
         "rs" => extract_rust_comment(&content),
         "py" => extract_python_docstring(&content),
-        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" => extract_js_comment(&content),
+        "js" | "ts" => extract_js_comment(&content),
         "go" => extract_go_comment(&content),
-        "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" => extract_c_comment(&content),
+        "c" | "cpp" => extract_c_comment(&content),
         "rb" => extract_ruby_comment(&content),
-        "sh" | "bash" | "zsh" => extract_shell_comment(&content),
+        "sh" => extract_shell_comment(&content),
         // Java, Kotlin, Swift use JavaDoc-style /** */ comments
-        "java" | "kt" | "kts" | "swift" => extract_javadoc_comment(&content),
+        "java" | "kt" | "swift" => extract_javadoc_comment(&content),
         // PHP uses PHPDoc /** */ and also # comments
         "php" => extract_php_comment(&content),
         // C# uses /// XML doc comments
