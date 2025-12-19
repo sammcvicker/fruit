@@ -242,6 +242,7 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, u
 }
 
 // Python patterns - with capture groups for symbol names
+// Functions with return type annotations (preferred, more informative)
 static PY_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
         .expect("PY_DEF_WITH_RETURN regex is invalid")
@@ -249,6 +250,12 @@ static PY_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
 static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
         .expect("PY_ASYNC_DEF_WITH_RETURN regex is invalid")
+});
+// Functions without return type annotations (fallback)
+static PY_DEF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^def\s+(\w+)\s*\([^)]*\)").expect("PY_DEF regex is invalid"));
+static PY_ASYNC_DEF: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)").expect("PY_ASYNC_DEF regex is invalid")
 });
 static PY_CLASS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").expect("PY_CLASS regex is invalid"));
@@ -275,13 +282,24 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
         let indent = calculate_indent(line);
 
         // Check each pattern (async first to avoid partial matches)
+        // Try typed versions first (more informative), then fall back to untyped
         // Use pattern matching to safely handle capture groups
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
             }
+        } else if let Some(caps) = PY_ASYNC_DEF.captures(trimmed) {
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
+        } else if let Some(caps) = PY_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
@@ -550,7 +568,7 @@ function privateFunc() {}
     }
 
     #[test]
-    fn test_python_typed_functions() {
+    fn test_python_functions() {
         let content = r#"
 """Module docstring."""
 
@@ -558,8 +576,16 @@ def process(data: str) -> dict:
     """Process data."""
     return {}
 
+def simple_func(items):
+    """Simple function without type annotation."""
+    return items
+
 async def fetch(url: str) -> bytes:
     """Fetch from URL."""
+    pass
+
+async def fetch_untyped(url):
+    """Async function without type annotation."""
     pass
 
 class UserService:
@@ -573,13 +599,46 @@ class _PrivateClass:
     pass
 "#;
         let sigs = extract_python_signatures(content).unwrap();
-        assert_eq!(sigs.len(), 3);
+        assert_eq!(sigs.len(), 5, "should capture 5 signatures: {:?}", sigs);
+
+        // Typed functions
         assert!(sigs[0].0.starts_with("def process"));
         assert_eq!(sigs[0].1, "process");
-        assert!(sigs[1].0.starts_with("async def fetch"));
-        assert_eq!(sigs[1].1, "fetch");
-        assert!(sigs[2].0.starts_with("class UserService"));
-        assert_eq!(sigs[2].1, "UserService");
+
+        // Untyped function
+        assert!(sigs[1].0.starts_with("def simple_func"));
+        assert_eq!(sigs[1].1, "simple_func");
+
+        // Typed async
+        assert!(sigs[2].0.starts_with("async def fetch"));
+        assert_eq!(sigs[2].1, "fetch");
+
+        // Untyped async
+        assert!(sigs[3].0.starts_with("async def fetch_untyped"));
+        assert_eq!(sigs[3].1, "fetch_untyped");
+
+        // Class
+        assert!(sigs[4].0.starts_with("class UserService"));
+        assert_eq!(sigs[4].1, "UserService");
+    }
+
+    #[test]
+    fn test_python_typed_functions() {
+        // Legacy test for backward compatibility - typed functions still work
+        let content = r#"
+def process(data: str) -> dict:
+    return {}
+
+async def fetch(url: str) -> bytes:
+    pass
+
+class UserService:
+    pass
+"#;
+        let sigs = extract_python_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 3);
+        assert!(sigs[0].0.contains("->"));
+        assert!(sigs[1].0.contains("->"));
     }
 
     #[test]
