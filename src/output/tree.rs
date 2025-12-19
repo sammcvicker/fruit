@@ -6,13 +6,13 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use crate::metadata::{MetadataBlock, MetadataLine};
+use crate::metadata::MetadataBlock;
 use crate::tree::TreeNode;
 
 use super::config::OutputConfig;
 use super::utils::{
-    calculate_wrap_width, continuation_prefix, first_line, has_indented_children,
-    should_insert_group_separator, wrap_text, write_metadata_line_with_symbol,
+    calculate_wrap_width, continuation_prefix, render_metadata_block,
+    write_metadata_line_with_symbol, MetadataRenderResult, RenderedLine,
 };
 
 /// Formatter for buffered tree output.
@@ -48,6 +48,59 @@ impl TreeFormatter {
         Ok(())
     }
 
+    /// Write a rendered line with colors to stdout.
+    fn write_rendered_line(
+        &self,
+        stdout: &mut StandardStream,
+        line: &RenderedLine,
+        cont_prefix: &str,
+        meta_prefix: &str,
+    ) -> io::Result<()> {
+        match line {
+            RenderedLine::Separator => {
+                stdout.reset()?;
+                writeln!(stdout, "{}", cont_prefix)?;
+            }
+            RenderedLine::Content { text, symbol_name, style, indent } => {
+                stdout.reset()?;
+                write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
+                write_metadata_line_with_symbol(
+                    stdout,
+                    text,
+                    symbol_name.as_deref(),
+                    style.color(),
+                    style.is_intense(),
+                    *indent,
+                )?;
+                writeln!(stdout)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Write inline content with colors (first line on same line as filename).
+    fn write_inline_content(
+        &self,
+        stdout: &mut StandardStream,
+        line: &RenderedLine,
+        meta_prefix: &str,
+    ) -> io::Result<()> {
+        if let RenderedLine::Content { text, symbol_name, style, indent } = line {
+            write!(stdout, "  {}", meta_prefix)?;
+            write_metadata_line_with_symbol(
+                stdout,
+                text,
+                symbol_name.as_deref(),
+                style.color(),
+                style.is_intense(),
+                *indent,
+            )?;
+        }
+        writeln!(stdout)?;
+        stdout.reset()?;
+        Ok(())
+    }
+
     /// Print a metadata block with colors to stdout.
     fn print_metadata_block(
         &self,
@@ -56,35 +109,9 @@ impl TreeFormatter {
         prefix: &str,
         is_last: bool,
     ) -> io::Result<()> {
-        if block.is_empty() {
-            writeln!(stdout)?;
-            return Ok(());
-        }
-
         let meta_prefix = self.config.metadata.prefix_str();
         let order = self.config.metadata.order;
-        let lines = block.lines_in_order(order);
-
-        // Not in full mode: show first line inline only
-        if !self.config.show_full() {
-            if let Some(first) = block.first_line(order) {
-                write!(stdout, "  {}", meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    stdout,
-                    first_line(&first.content),
-                    first.symbol_name.as_deref(),
-                    first.style.color(),
-                    first.style.is_intense(),
-                    first.indent,
-                )?;
-            }
-            writeln!(stdout)?;
-            stdout.reset()?;
-            return Ok(());
-        }
-
-        // Full mode: display in a block beneath filename
-        writeln!(stdout)?; // End the filename line
+        let show_full = self.config.show_full();
 
         let cont_prefix = continuation_prefix(prefix, is_last);
         let wrap_width = calculate_wrap_width(
@@ -93,58 +120,63 @@ impl TreeFormatter {
             meta_prefix.chars().count(),
         );
 
-        // Blank line before block
-        stdout.reset()?;
-        writeln!(stdout, "{}", cont_prefix)?;
+        let result = render_metadata_block(block, order, show_full, wrap_width);
 
-        // Metadata lines with per-line styling
-        let line_refs: Vec<&MetadataLine> = lines.iter().collect();
-        let mut prev_indent: Option<usize> = None;
-        for (i, meta_line) in lines.iter().enumerate() {
-            let content = meta_line.content.trim();
-
-            // Empty line is a separator
-            if content.is_empty() {
-                stdout.reset()?;
-                writeln!(stdout, "{}", cont_prefix)?;
-                prev_indent = None; // Reset indent tracking after separator
-                continue;
-            }
-
-            // Check if we should insert a group separator
-            let has_children = has_indented_children(&line_refs[i + 1..], meta_line.indent);
-            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
-                stdout.reset()?;
-                writeln!(stdout, "{}", cont_prefix)?;
-            }
-            prev_indent = Some(meta_line.indent);
-
-            let wrapped = if let Some(width) = wrap_width {
-                wrap_text(content, width)
-            } else {
-                vec![content.to_string()]
-            };
-
-            for wrapped_line in wrapped.iter() {
-                stdout.reset()?;
-                write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    stdout,
-                    wrapped_line,
-                    meta_line.symbol_name.as_deref(),
-                    meta_line.style.color(),
-                    meta_line.style.is_intense(),
-                    meta_line.indent,
-                )?;
+        match result {
+            MetadataRenderResult::Empty => {
                 writeln!(stdout)?;
             }
+            MetadataRenderResult::Inline { first } => {
+                self.write_inline_content(stdout, &first, meta_prefix)?;
+            }
+            MetadataRenderResult::InlineWithBlock { first, block_lines } => {
+                self.write_inline_content(stdout, &first, meta_prefix)?;
+                for line in &block_lines {
+                    self.write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
+                }
+                stdout.reset()?;
+            }
+            MetadataRenderResult::Block { lines } => {
+                writeln!(stdout)?; // End the filename line
+                for line in &lines {
+                    self.write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
+                }
+                stdout.reset()?;
+            }
         }
-
-        // Blank line after block
-        stdout.reset()?;
-        writeln!(stdout, "{}", cont_prefix)?;
-        stdout.reset()?;
         Ok(())
+    }
+
+    /// Format a rendered line to plain text.
+    fn format_rendered_line(
+        &self,
+        output: &mut String,
+        line: &RenderedLine,
+        cont_prefix: &str,
+        meta_prefix: &str,
+    ) {
+        match line {
+            RenderedLine::Separator => {
+                output.push_str(cont_prefix);
+                output.push('\n');
+            }
+            RenderedLine::Content { text, .. } => {
+                output.push_str(cont_prefix);
+                output.push_str(meta_prefix);
+                output.push_str(text);
+                output.push('\n');
+            }
+        }
+    }
+
+    /// Format inline content to plain text.
+    fn format_inline_content(&self, output: &mut String, line: &RenderedLine, meta_prefix: &str) {
+        if let RenderedLine::Content { text, .. } = line {
+            output.push_str("  ");
+            output.push_str(meta_prefix);
+            output.push_str(text);
+        }
+        output.push('\n');
     }
 
     /// Format a metadata block to plain text output.
@@ -155,28 +187,9 @@ impl TreeFormatter {
         prefix: &str,
         is_last: bool,
     ) {
-        if block.is_empty() {
-            output.push('\n');
-            return;
-        }
-
         let meta_prefix = self.config.metadata.prefix_str();
         let order = self.config.metadata.order;
-        let lines = block.lines_in_order(order);
-
-        // Not in full mode: show first line inline only
-        if !self.config.show_full() {
-            if let Some(first) = block.first_line(order) {
-                output.push_str("  ");
-                output.push_str(meta_prefix);
-                output.push_str(first_line(&first.content));
-            }
-            output.push('\n');
-            return;
-        }
-
-        // Full mode: display in a block beneath filename
-        output.push('\n'); // End the filename line
+        let show_full = self.config.show_full();
 
         let cont_prefix = continuation_prefix(prefix, is_last);
         let wrap_width = calculate_wrap_width(
@@ -185,49 +198,28 @@ impl TreeFormatter {
             meta_prefix.chars().count(),
         );
 
-        // Blank line before block
-        output.push_str(&cont_prefix);
-        output.push('\n');
+        let result = render_metadata_block(block, order, show_full, wrap_width);
 
-        // Metadata lines with group separators (matches colored output logic)
-        let line_refs: Vec<&MetadataLine> = lines.iter().collect();
-        let mut prev_indent: Option<usize> = None;
-        for (i, meta_line) in lines.iter().enumerate() {
-            let content = meta_line.content.trim();
-
-            // Empty line is a separator
-            if content.is_empty() {
-                output.push_str(&cont_prefix);
-                output.push('\n');
-                prev_indent = None; // Reset indent tracking after separator
-                continue;
-            }
-
-            // Check if we should insert a group separator
-            let has_children = has_indented_children(&line_refs[i + 1..], meta_line.indent);
-            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
-                output.push_str(&cont_prefix);
+        match result {
+            MetadataRenderResult::Empty => {
                 output.push('\n');
             }
-            prev_indent = Some(meta_line.indent);
-
-            let wrapped = if let Some(width) = wrap_width {
-                wrap_text(content, width)
-            } else {
-                vec![content.to_string()]
-            };
-
-            for wrapped_line in wrapped.iter() {
-                output.push_str(&cont_prefix);
-                output.push_str(meta_prefix);
-                output.push_str(wrapped_line);
-                output.push('\n');
+            MetadataRenderResult::Inline { first } => {
+                self.format_inline_content(output, &first, meta_prefix);
+            }
+            MetadataRenderResult::InlineWithBlock { first, block_lines } => {
+                self.format_inline_content(output, &first, meta_prefix);
+                for line in &block_lines {
+                    self.format_rendered_line(output, line, &cont_prefix, meta_prefix);
+                }
+            }
+            MetadataRenderResult::Block { lines } => {
+                output.push('\n'); // End the filename line
+                for line in &lines {
+                    self.format_rendered_line(output, line, &cont_prefix, meta_prefix);
+                }
             }
         }
-
-        // Blank line after block
-        output.push_str(&cont_prefix);
-        output.push('\n');
     }
 
     fn format_node(

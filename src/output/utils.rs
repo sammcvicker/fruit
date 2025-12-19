@@ -3,6 +3,8 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 
+use crate::metadata::{LineStyle, MetadataBlock, MetadataLine, MetadataOrder};
+
 /// Calculate the continuation prefix for lines below the filename.
 /// Used by both TreeFormatter and StreamingFormatter.
 pub fn continuation_prefix(prefix: &str, is_last: bool) -> String {
@@ -188,6 +190,165 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     }
 
     lines
+}
+
+/// A rendered line from a metadata block, ready for output.
+/// This abstraction allows the same rendering logic to be used
+/// for both colored (stdout) and plain (String) output.
+#[derive(Debug, Clone)]
+pub enum RenderedLine {
+    /// A blank separator line (just continuation prefix)
+    Separator,
+    /// A content line with styling information
+    Content {
+        text: String,
+        symbol_name: Option<String>,
+        style: LineStyle,
+        indent: usize,
+    },
+}
+
+/// Result of rendering a metadata block.
+#[derive(Debug)]
+pub enum MetadataRenderResult {
+    /// Block is empty, just end the filename line
+    Empty,
+    /// Show first line inline on the same line as filename
+    Inline {
+        first: RenderedLine,
+    },
+    /// Show first line inline, then remaining lines in a block below
+    InlineWithBlock {
+        first: RenderedLine,
+        block_lines: Vec<RenderedLine>,
+    },
+    /// Show all lines in a block below the filename
+    Block {
+        lines: Vec<RenderedLine>,
+    },
+}
+
+/// Render a metadata block into a structured result that formatters can write.
+/// This centralizes the logic for determining inline vs block display and group separators.
+pub fn render_metadata_block(
+    block: &MetadataBlock,
+    order: MetadataOrder,
+    show_full: bool,
+    wrap_width: Option<usize>,
+) -> MetadataRenderResult {
+    if block.is_empty() {
+        return MetadataRenderResult::Empty;
+    }
+
+    let lines = block.lines_in_order(order);
+
+    // Not in full mode: show first line inline only
+    if !show_full {
+        if let Some(first) = block.first_line(order) {
+            return MetadataRenderResult::Inline {
+                first: RenderedLine::Content {
+                    text: first_line(&first.content).to_string(),
+                    symbol_name: first.symbol_name.clone(),
+                    style: first.style,
+                    indent: first.indent,
+                },
+            };
+        }
+        return MetadataRenderResult::Empty;
+    }
+
+    // Full mode: check if we should show inline or as block
+    let total_lines = block.total_lines();
+    let first_is_single = block.first_section_is_single_line(order);
+
+    // If total is just 1 line, show inline
+    if total_lines == 1 {
+        if let Some(first) = block.first_line(order) {
+            return MetadataRenderResult::Inline {
+                first: RenderedLine::Content {
+                    text: first_line(&first.content).to_string(),
+                    symbol_name: first.symbol_name.clone(),
+                    style: first.style,
+                    indent: first.indent,
+                },
+            };
+        }
+        return MetadataRenderResult::Empty;
+    }
+
+    // Helper to render a slice of MetadataLines into RenderedLines
+    let render_lines = |meta_lines: &[&MetadataLine]| -> Vec<RenderedLine> {
+        let mut result = Vec::new();
+        let mut prev_indent: Option<usize> = None;
+
+        // Add blank line before block
+        result.push(RenderedLine::Separator);
+
+        for (i, meta_line) in meta_lines.iter().enumerate() {
+            let content = meta_line.content.trim();
+
+            // Empty line is a separator
+            if content.is_empty() {
+                result.push(RenderedLine::Separator);
+                prev_indent = None;
+                continue;
+            }
+
+            // Check if we should insert a group separator
+            let has_children = has_indented_children(&meta_lines[i + 1..], meta_line.indent);
+            if should_insert_group_separator(meta_line.indent, prev_indent, has_children) {
+                result.push(RenderedLine::Separator);
+            }
+            prev_indent = Some(meta_line.indent);
+
+            // Wrap text if needed
+            let wrapped = if let Some(width) = wrap_width {
+                wrap_text(content, width)
+            } else {
+                vec![content.to_string()]
+            };
+
+            for wrapped_line in wrapped {
+                result.push(RenderedLine::Content {
+                    text: wrapped_line,
+                    symbol_name: meta_line.symbol_name.clone(),
+                    style: meta_line.style,
+                    indent: meta_line.indent,
+                });
+            }
+        }
+
+        // Add blank line after block
+        result.push(RenderedLine::Separator);
+
+        result
+    };
+
+    // If first section is single line and there's more content, show first inline then rest below
+    if first_is_single {
+        if let Some(first) = block.first_line(order) {
+            // Skip the first line (already shown inline) and the separator after it
+            let skip_count = if block.has_both() { 2 } else { 1 };
+            let remaining: Vec<_> = lines.iter().skip(skip_count).collect();
+            let block_lines = render_lines(&remaining);
+
+            return MetadataRenderResult::InlineWithBlock {
+                first: RenderedLine::Content {
+                    text: first_line(&first.content).to_string(),
+                    symbol_name: first.symbol_name.clone(),
+                    style: first.style,
+                    indent: first.indent,
+                },
+                block_lines,
+            };
+        }
+    }
+
+    // First section has multiple lines, show everything below
+    let line_refs: Vec<_> = lines.iter().collect();
+    MetadataRenderResult::Block {
+        lines: render_lines(&line_refs),
+    }
 }
 
 #[cfg(test)]
