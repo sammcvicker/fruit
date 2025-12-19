@@ -46,7 +46,7 @@ impl GitignoreFilter {
         }
 
         // Also add directories that contain included files
-        for file_path in &included_files.clone() {
+        for file_path in &included_files {
             let mut current = file_path.parent();
             while let Some(dir) = current {
                 if !included_dirs.insert(dir.to_path_buf()) {

@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improves maintainability: adding a new language now requires changes in one place only
   - Better extensibility: clearer API for future plugin support
 
+### Performance
+
+- Removed unnecessary HashSet clone in GitignoreFilter::new() (#115)
+
 ### Added
 
 - `--max-file-size` flag to configure maximum file size for metadata extraction (#76)
