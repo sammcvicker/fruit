@@ -275,3 +275,117 @@ fn test_json_no_comments() {
         "comment should be omitted when None"
     );
 }
+
+// ============================================================================
+// --todos-only Flag Tests
+// ============================================================================
+
+#[test]
+fn test_todos_only_filters_files() {
+    let repo = TestRepo::with_git();
+    repo.add_file("has_todo.rs", "// TODO: fix this\nfn foo() {}");
+    repo.add_file("no_todo.rs", "// Regular comment\nfn bar() {}");
+    repo.add_file("has_fixme.py", "# FIXME: broken\ndef baz(): pass");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--todos", "--todos-only"]);
+    assert!(success);
+
+    // Should show files with TODOs
+    assert!(
+        stdout.contains("has_todo.rs"),
+        "should show file with TODO: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("has_fixme.py"),
+        "should show file with FIXME: {}",
+        stdout
+    );
+
+    // Should NOT show files without TODOs
+    assert!(
+        !stdout.contains("no_todo.rs"),
+        "should not show file without TODOs: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_todos_only_empty_when_no_todos() {
+    let repo = TestRepo::with_git();
+    repo.add_file("clean.rs", "// Just a comment\nfn foo() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--todos", "--todos-only"]);
+    assert!(success);
+    assert!(
+        stdout.contains("0 files"),
+        "should find no files: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_todos_only_with_json_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file("has_todo.rs", "// TODO: fix this\nfn foo() {}");
+    repo.add_file("no_todo.rs", "// Regular comment\nfn bar() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--todos", "--todos-only", "--json"]);
+    assert!(success);
+
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let children = json["children"].as_array().unwrap();
+
+    // Should only include file with TODO
+    assert_eq!(
+        children.len(),
+        1,
+        "should have exactly one file: {:?}",
+        children
+    );
+    assert_eq!(children[0]["name"], "has_todo.rs");
+    assert!(children[0]["todos"].is_array());
+}
+
+#[test]
+fn test_todos_only_in_nested_directories() {
+    let repo = TestRepo::with_git();
+    repo.add_file("top.rs", "fn top() {}");
+    repo.add_file("src/with_todo.rs", "// TODO: implement\nfn todo() {}");
+    repo.add_file("src/no_todo.rs", "fn clean() {}");
+    repo.add_file("tests/has_fixme.rs", "// FIXME: broken test\nfn test() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--todos", "--todos-only"]);
+    assert!(success);
+
+    // Should show files with TODOs
+    assert!(
+        stdout.contains("with_todo.rs"),
+        "should show with_todo.rs: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("has_fixme.rs"),
+        "should show has_fixme.rs: {}",
+        stdout
+    );
+
+    // Should NOT show files without TODOs
+    assert!(
+        !stdout.contains("top.rs"),
+        "should not show top.rs: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("no_todo.rs"),
+        "should not show no_todo.rs: {}",
+        stdout
+    );
+
+    // Should show 2 files (only the ones with TODOs)
+    assert!(
+        stdout.contains("2 files"),
+        "should show 2 files: {}",
+        stdout
+    );
+}

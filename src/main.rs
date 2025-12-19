@@ -276,6 +276,7 @@ fn main() {
         extract_comments: show_comments,
         extract_types: show_types,
         extract_todos: show_todos,
+        todos_only: args.todos_only,
         extract_imports: args.imports,
         show_size: args.size,
         ignore_patterns: args.ignore.clone(),
