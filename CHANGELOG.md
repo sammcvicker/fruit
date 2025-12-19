@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added custom Default implementation for WalkerConfig with sensible defaults (#114)
+  - `extract_comments` now defaults to `true` (matches default CLI behavior)
+  - Using `..Default::default()` pattern in main.rs improves maintainability
+  - New config fields will automatically get default values without breaking existing code
 - Deduplicated metadata rendering methods between StreamingFormatter and TreeFormatter (#112)
   - Extracted `write_rendered_line()`, `write_inline_content()`, and `print_metadata_block()` into shared utility functions
   - Both formatters now use the same rendering logic from `output/utils.rs`

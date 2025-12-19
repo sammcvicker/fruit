@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 /// Configuration for tree walking behavior.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct WalkerConfig {
     pub show_all: bool,
     pub max_depth: Option<usize>,
@@ -25,4 +25,24 @@ pub struct WalkerConfig {
     pub newer_than: Option<SystemTime>,
     /// Only include files modified before this time
     pub older_than: Option<SystemTime>,
+}
+
+impl Default for WalkerConfig {
+    fn default() -> Self {
+        Self {
+            show_all: false,
+            max_depth: None,
+            dirs_only: false,
+            extract_comments: true, // default behavior: show comments
+            extract_types: false,
+            extract_todos: false,
+            todos_only: false,
+            extract_imports: false,
+            show_size: false,
+            ignore_patterns: Vec::new(),
+            parallel_workers: 0,
+            newer_than: None,
+            older_than: None,
+        }
+    }
 }

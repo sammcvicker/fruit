@@ -286,6 +286,7 @@ fn main() {
         parallel_workers: args.jobs,
         newer_than,
         older_than,
+        ..Default::default()
     };
 
     let root = if args.path.is_absolute() {
