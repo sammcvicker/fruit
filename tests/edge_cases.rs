@@ -622,3 +622,177 @@ fn test_performance_1000_files() {
         elapsed
     );
 }
+
+// ============================================================================
+// CLI Error Handling Tests (Issue #113)
+// ============================================================================
+
+#[test]
+fn test_invalid_max_file_size_non_numeric() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--max-file-size", "invalid"]);
+    assert!(!success, "should fail with invalid max-file-size");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("number"),
+        "should show error message about invalid size: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_max_file_size_negative() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    // Negative numbers in arguments are tricky because they look like flags
+    // This tests that the parser rejects the negative value appropriately
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--max-file-size", "-5M"]);
+    assert!(!success, "should fail with negative max-file-size");
+    // The error is about unexpected argument because -5M looks like a flag
+    assert!(
+        stderr.contains("unexpected argument") || stderr.contains("invalid"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_max_file_size_bad_suffix() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--max-file-size", "100X"]);
+    assert!(!success, "should fail with invalid suffix");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("number"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_newer_duration() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--newer", "not-a-duration"]);
+    assert!(!success, "should fail with invalid --newer duration");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("duration"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_older_duration() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--older", "xyz123"]);
+    assert!(!success, "should fail with invalid --older duration");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("duration"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_level_negative() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--level", "-1"]);
+    assert!(!success, "should fail with negative level");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_level_non_numeric() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--level", "abc"]);
+    assert!(!success, "should fail with non-numeric level");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_jobs_negative() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--jobs", "-1"]);
+    assert!(!success, "should fail with negative jobs");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_jobs_non_numeric() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--jobs", "abc"]);
+    assert!(!success, "should fail with non-numeric jobs");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_nonexistent_path() {
+    // Run from a valid directory but pass a nonexistent path as an argument
+    let repo = TestRepo::with_git();
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["/nonexistent/path/12345"]);
+    assert!(!success, "should fail with nonexistent path");
+    assert!(
+        stderr.contains("No such file or directory") || stderr.contains("cannot access"),
+        "should show error message about missing path: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_wrap_negative() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--wrap", "-1"]);
+    assert!(!success, "should fail with negative wrap");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_wrap_non_numeric() {
+    let repo = TestRepo::with_git();
+    repo.add_file("file.rs", "fn file() {}");
+
+    let (_stdout, stderr, success) = run_fruit(repo.path(), &["--wrap", "xyz"]);
+    assert!(!success, "should fail with non-numeric wrap");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("value"),
+        "should show error message: {}",
+        stderr
+    );
+}
