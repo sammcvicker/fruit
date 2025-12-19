@@ -11,6 +11,8 @@ pub struct WalkerConfig {
     pub extract_comments: bool,
     pub extract_types: bool,
     pub extract_todos: bool,
+    /// Only show files that contain TODO/FIXME markers (requires extract_todos = true)
+    pub todos_only: bool,
     pub extract_imports: bool,
     pub show_size: bool,
     pub ignore_patterns: Vec<String>,

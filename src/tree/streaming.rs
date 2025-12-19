@@ -201,11 +201,65 @@ impl StreamingWalker {
         let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
             metadata_results.into_iter().collect();
 
+        // If todos_only is enabled, we need to filter files without TODOs
+        // and track which indices to skip
+        let skip_indices: std::collections::HashSet<usize> = if self.config.todos_only {
+            entries
+                .iter()
+                .enumerate()
+                .filter_map(|(i, entry)| {
+                    if entry.is_dir {
+                        None // Don't skip directories
+                    } else {
+                        // Check if this file has TODOs
+                        let has_todos = metadata_map
+                            .get(&i)
+                            .and_then(|opt| opt.as_ref())
+                            .is_some_and(|meta| !meta.todo_lines.is_empty());
+                        if has_todos {
+                            None // Don't skip
+                        } else {
+                            Some(i) // Skip this file
+                        }
+                    }
+                })
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         // Phase 3: Output entries in tree order
         let mut dir_count = 0usize;
         let mut file_count = 0usize;
 
-        for (i, entry) in entries.iter().enumerate() {
+        // We need to track is_last correctly after filtering
+        // Group entries by parent prefix and recalculate is_last
+        let filtered_entries: Vec<_> = entries
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !skip_indices.contains(i))
+            .collect();
+
+        // Calculate which filtered entries are last among their siblings
+        let is_last_map: std::collections::HashMap<usize, bool> = {
+            let mut map = std::collections::HashMap::new();
+            let mut prefix_counts: std::collections::HashMap<&str, Vec<usize>> =
+                std::collections::HashMap::new();
+
+            for &(i, entry) in &filtered_entries {
+                prefix_counts.entry(&entry.prefix).or_default().push(i);
+            }
+
+            for indices in prefix_counts.values() {
+                for (pos, &idx) in indices.iter().enumerate() {
+                    map.insert(idx, pos == indices.len() - 1);
+                }
+            }
+
+            map
+        };
+
+        for (i, entry) in filtered_entries {
             let metadata = if entry.is_dir {
                 None
             } else {
@@ -219,11 +273,14 @@ impl StreamingWalker {
                 None
             };
 
+            // Use recalculated is_last, or original if not in map (shouldn't happen)
+            let is_last = is_last_map.get(&i).copied().unwrap_or(entry.is_last);
+
             output.output_node(
                 &entry.name,
                 metadata,
                 entry.is_dir,
-                entry.is_last,
+                is_last,
                 &entry.prefix,
                 entry.is_root,
                 size,
@@ -438,6 +495,16 @@ impl StreamingWalker {
                     continue;
                 }
                 let metadata = self.extract_metadata(&entry_path);
+                // If todos_only is enabled, skip files without TODOs
+                if self.config.todos_only {
+                    if let Some(ref meta) = metadata {
+                        if meta.todo_lines.is_empty() {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
                 valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)

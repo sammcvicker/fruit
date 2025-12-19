@@ -84,6 +84,14 @@ impl TreeWalker {
             } else {
                 None
             };
+            // If todos_only is enabled, skip files without TODOs
+            if self.config.todos_only
+                && todos
+                    .as_ref()
+                    .is_none_or(|t: &Vec<JsonTodoItem>| t.is_empty())
+            {
+                return None;
+            }
             let imports = if self.config.extract_imports {
                 extract_imports(path)
             } else {
