@@ -213,7 +213,10 @@ fn get_metadata_order(matches: &ArgMatches) -> MetadataOrder {
 
 fn main() {
     let matches = Args::command().get_matches();
-    let args = Args::from_arg_matches(&matches).unwrap();
+    let args = Args::from_arg_matches(&matches).unwrap_or_else(|e| {
+        eprintln!("fruit: argument parsing error: {}", e);
+        process::exit(1);
+    });
 
     // Configure max file size for extraction if specified
     if let Some(ref size_str) = args.max_file_size {
