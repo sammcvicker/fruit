@@ -263,6 +263,7 @@ static PY_CLASS: LazyLock<Regex> =
 
 fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
+    let mut pending_decorators: Vec<String> = Vec::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -272,11 +273,18 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
             continue;
         }
 
+        // Track decorators for the next function/class
+        if trimmed.starts_with('@') {
+            pending_decorators.push(trimmed.to_string());
+            continue;
+        }
+
         // Skip private functions/classes (starting with _)
         if trimmed.starts_with("def _")
             || trimmed.starts_with("async def _")
             || trimmed.starts_with("class _")
         {
+            pending_decorators.clear(); // Clear decorators for private items
             continue;
         }
 
@@ -285,35 +293,62 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
         // Check each pattern (async first to avoid partial matches)
         // Try typed versions first (more informative), then fall back to untyped
         // Use pattern matching to safely handle capture groups
+        let mut matched = false;
+
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
+                let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
+                matched = true;
             }
         } else if let Some(caps) = PY_ASYNC_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
+                let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
+                matched = true;
             }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
+                let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
+                matched = true;
             }
         } else if let Some(caps) = PY_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
+                let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
+                matched = true;
             }
         } else if let Some(caps) = PY_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
-                let sig = clean_signature(full.as_str());
+                let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
+                matched = true;
             }
+        }
+
+        // Clear pending decorators after matching or if we hit a non-decorator, non-def line
+        if matched
+            || (!trimmed.is_empty()
+                && !trimmed.starts_with("def")
+                && !trimmed.starts_with("async def")
+                && !trimmed.starts_with("class"))
+        {
+            pending_decorators.clear();
         }
     }
 
     Some(signatures)
+}
+
+/// Build a signature string including decorators if present
+fn build_signature_with_decorators(decorators: &[String], def_line: &str) -> String {
+    if decorators.is_empty() {
+        clean_signature(def_line)
+    } else {
+        let decorator_str = decorators.join(" ");
+        format!("{} {}", decorator_str, clean_signature(def_line))
+    }
 }
 
 // Go patterns - exported items start with uppercase - with capture groups
@@ -640,6 +675,95 @@ class UserService:
         assert_eq!(sigs.len(), 3);
         assert!(sigs[0].0.contains("->"));
         assert!(sigs[1].0.contains("->"));
+    }
+
+    #[test]
+    fn test_python_decorated_functions() {
+        let content = r#"
+class MyClass:
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @staticmethod
+    def create() -> 'MyClass':
+        return MyClass()
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'MyClass':
+        return cls()
+
+    @app.route('/users')
+    def get_users() -> list:
+        return []
+
+    @decorator1
+    @decorator2
+    def multi_decorated(x: int) -> int:
+        return x
+
+    def regular_method(self):
+        pass
+"#;
+        let sigs = extract_python_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 7); // class + 6 methods
+
+        // Check class
+        assert!(sigs[0].0.starts_with("class MyClass"));
+        assert_eq!(sigs[0].1, "MyClass");
+
+        // Check property decorator
+        assert!(sigs[1].0.contains("@property"));
+        assert!(sigs[1].0.contains("def name(self) -> str"));
+        assert_eq!(sigs[1].1, "name");
+
+        // Check staticmethod decorator
+        assert!(sigs[2].0.contains("@staticmethod"));
+        assert!(sigs[2].0.contains("def create() -> 'MyClass'"));
+        assert_eq!(sigs[2].1, "create");
+
+        // Check classmethod decorator
+        assert!(sigs[3].0.contains("@classmethod"));
+        assert!(
+            sigs[3]
+                .0
+                .contains("def from_dict(cls, data: dict) -> 'MyClass'")
+        );
+        assert_eq!(sigs[3].1, "from_dict");
+
+        // Check custom decorator
+        assert!(sigs[4].0.contains("@app.route('/users')"));
+        assert!(sigs[4].0.contains("def get_users() -> list"));
+        assert_eq!(sigs[4].1, "get_users");
+
+        // Check multiple decorators
+        assert!(sigs[5].0.contains("@decorator1"));
+        assert!(sigs[5].0.contains("@decorator2"));
+        assert!(sigs[5].0.contains("def multi_decorated(x: int) -> int"));
+        assert_eq!(sigs[5].1, "multi_decorated");
+
+        // Check regular method (no decorator)
+        assert!(!sigs[6].0.contains("@"));
+        assert!(sigs[6].0.contains("def regular_method(self)"));
+        assert_eq!(sigs[6].1, "regular_method");
+    }
+
+    #[test]
+    fn test_python_private_decorated_functions() {
+        let content = r#"
+@property
+def _private_property(self) -> str:
+    return "private"
+
+@staticmethod
+def public_method() -> None:
+    pass
+"#;
+        let sigs = extract_python_signatures(content).unwrap();
+        // Should skip _private_property but capture public_method
+        assert_eq!(sigs.len(), 1);
+        assert!(sigs[0].0.contains("@staticmethod"));
+        assert_eq!(sigs[0].1, "public_method");
     }
 
     #[test]

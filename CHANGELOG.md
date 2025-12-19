@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Python type extraction now captures decorated functions (#116)
+  - Functions with `@property`, `@staticmethod`, `@classmethod`, and other decorators are now extracted
+  - Decorators are included in the signature display (e.g., `@property def name(self) -> str`)
+  - Multiple decorators are supported and displayed in order
+  - Private decorated functions (starting with `_`) are still correctly skipped
+
 ### Changed
 
 - Added custom Default implementation for WalkerConfig with sensible defaults (#114)
