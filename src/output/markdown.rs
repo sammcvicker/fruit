@@ -141,3 +141,288 @@ pub fn print_markdown(formatter: &MarkdownFormatter) -> io::Result<()> {
     print!("{}", formatter.output());
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metadata::{LineStyle, MetadataConfig, MetadataLine, MetadataOrder};
+
+    fn make_config(full: bool) -> OutputConfig {
+        OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig {
+                comments: true,
+                types: false,
+                todos: false,
+                full,
+                prefix: None,
+                order: MetadataOrder::CommentsFirst,
+            },
+            wrap_width: None,
+        }
+    }
+
+    #[test]
+    fn test_markdown_directory_format() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        // Output root directory
+        formatter
+            .output_node("my_project", None, true, true, "", true, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("**my_project/**"),
+            "directory should be bold with trailing slash: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_file_format() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        // Output a file (not root)
+        formatter
+            .output_node("main.rs", None, false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("`main.rs`"),
+            "filename should be in backticks: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_file_with_size() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        // Output a file with size
+        formatter
+            .output_node("main.rs", None, false, true, "    ", false, Some(1024))
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("`main.rs`"),
+            "filename should be in backticks: {}",
+            output
+        );
+        // Size is formatted by format_size which uses "1.0K" format
+        assert!(output.contains("1.0K"), "should show file size: {}", output);
+    }
+
+    #[test]
+    fn test_markdown_file_with_comment() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        let mut block = MetadataBlock::new();
+        block.comment_lines = vec![MetadataLine::new("This is a module comment")];
+
+        formatter
+            .output_node("lib.rs", Some(block), false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("`lib.rs`"),
+            "filename should be in backticks: {}",
+            output
+        );
+        assert!(
+            output.contains("This is a module comment"),
+            "should contain comment: {}",
+            output
+        );
+        assert!(
+            output.contains(" - "),
+            "should have separator before comment: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_nested_indentation() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        // Simulate nested structure
+        // Prefix represents tree prefix characters (4 chars per level: "    " or "│   ")
+        formatter
+            .output_node("project", None, true, true, "", true, None)
+            .unwrap();
+        formatter
+            .output_node("src", None, true, false, "    ", false, None)
+            .unwrap();
+        formatter
+            .output_node("main.rs", None, false, true, "        ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        let lines: Vec<&str> = output.lines().collect();
+
+        // Root should have no indentation
+        assert!(
+            lines[0].starts_with("- **"),
+            "root should start with '- **': {}",
+            lines[0]
+        );
+        // First level: prefix is "    " (4 chars) -> indent_level = 1 + 1 = 2 -> 4 spaces
+        assert!(
+            lines[1].starts_with("    - **"),
+            "first level dir should have 4 spaces: {}",
+            lines[1]
+        );
+        // Second level: prefix is "        " (8 chars) -> indent_level = 2 + 1 = 3 -> 6 spaces
+        assert!(
+            lines[2].starts_with("      - `"),
+            "second level file should have 6 spaces: {}",
+            lines[2]
+        );
+    }
+
+    #[test]
+    fn test_markdown_multiline_comment_full_mode() {
+        let config = make_config(true); // full mode
+        let mut formatter = MarkdownFormatter::new(config);
+
+        let mut block = MetadataBlock::new();
+        block.comment_lines = vec![
+            MetadataLine::new("First line of comment"),
+            MetadataLine::new("Second line of comment"),
+            MetadataLine::new("Third line of comment"),
+        ];
+
+        formatter
+            .output_node("lib.rs", Some(block), false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("First line of comment"),
+            "should contain first line: {}",
+            output
+        );
+        // In full mode, remaining lines are shown as blockquote
+        assert!(
+            output.contains("> "),
+            "should use blockquote for additional lines: {}",
+            output
+        );
+        assert!(
+            output.contains("Second line of comment"),
+            "should contain second line: {}",
+            output
+        );
+        assert!(
+            output.contains("Third line of comment"),
+            "should contain third line: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_finish_summary() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        formatter.finish(5, 23).unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("*5 directories, 23 files*"),
+            "should show italicized summary: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_special_filename_chars() {
+        let config = make_config(false);
+        let mut formatter = MarkdownFormatter::new(config);
+
+        // Test filename with underscores and dots (common in Rust/Python)
+        formatter
+            .output_node("my_module.test.rs", None, false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("`my_module.test.rs`"),
+            "filename with special chars should be preserved: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_type_signatures() {
+        let config = OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig {
+                comments: false,
+                types: true,
+                todos: false,
+                full: false,
+                prefix: None,
+                order: MetadataOrder::TypesFirst,
+            },
+            wrap_width: None,
+        };
+        let mut formatter = MarkdownFormatter::new(config);
+
+        let mut block = MetadataBlock::new();
+        block.type_lines = vec![MetadataLine::with_style(
+            "pub fn main()",
+            LineStyle::TypeSignature,
+        )];
+
+        formatter
+            .output_node("main.rs", Some(block), false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("pub fn main()"),
+            "should show type signature: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_markdown_todo_markers() {
+        let config = OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig {
+                comments: false,
+                types: false,
+                todos: true,
+                full: false,
+                prefix: None,
+                order: MetadataOrder::CommentsFirst,
+            },
+            wrap_width: None,
+        };
+        let mut formatter = MarkdownFormatter::new(config);
+
+        let mut block = MetadataBlock::new();
+        block.todo_lines = vec![MetadataLine::with_style("TODO: fix this", LineStyle::Todo)];
+
+        formatter
+            .output_node("main.rs", Some(block), false, true, "    ", false, None)
+            .unwrap();
+
+        let output = formatter.output();
+        assert!(
+            output.contains("TODO: fix this"),
+            "should show TODO marker: {}",
+            output
+        );
+    }
+}
