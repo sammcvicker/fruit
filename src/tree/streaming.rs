@@ -177,8 +177,12 @@ impl StreamingWalker {
                             })
                             .collect()
                     }),
-                    Err(_) => {
-                        // Fall back to rayon's global pool if custom pool creation fails
+                    Err(e) => {
+                        // Warn user and fall back to rayon's global pool
+                        eprintln!(
+                            "fruit: warning: failed to create thread pool with {} workers ({}), using default pool",
+                            self.config.parallel_workers, e
+                        );
                         file_indices
                             .par_iter()
                             .map(|&i| {
