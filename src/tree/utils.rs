@@ -18,7 +18,11 @@ pub fn has_included_files(path: &Path, filter: &Option<FileFilter>) -> bool {
 }
 
 /// Check if a path should be included based on filter, show_all flag, and time filters.
-pub fn should_include_path(path: &Path, config: &WalkerConfig, filter: &Option<FileFilter>) -> bool {
+pub fn should_include_path(
+    path: &Path,
+    config: &WalkerConfig,
+    filter: &Option<FileFilter>,
+) -> bool {
     // Check gitignore filter
     if !config.show_all {
         if let Some(f) = filter {

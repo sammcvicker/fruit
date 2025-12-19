@@ -11,8 +11,8 @@ use crate::tree::StreamingOutput;
 
 use super::config::OutputConfig;
 use super::utils::{
-    calculate_wrap_width, continuation_prefix, render_metadata_block, write_metadata_line_with_symbol,
-    MetadataRenderResult, RenderedLine,
+    MetadataRenderResult, RenderedLine, calculate_wrap_width, continuation_prefix,
+    render_metadata_block, write_metadata_line_with_symbol,
 };
 
 /// Streaming output formatter - outputs directly to stdout without buffering.
@@ -47,7 +47,12 @@ impl StreamingFormatter {
                 self.stdout.reset()?;
                 writeln!(self.stdout, "{}", cont_prefix)?;
             }
-            RenderedLine::Content { text, symbol_name, style, indent } => {
+            RenderedLine::Content {
+                text,
+                symbol_name,
+                style,
+                indent,
+            } => {
                 self.stdout.reset()?;
                 write!(self.stdout, "{}{}", cont_prefix, meta_prefix)?;
                 write_metadata_line_with_symbol(
@@ -66,7 +71,13 @@ impl StreamingFormatter {
 
     /// Write inline content (first line on same line as filename).
     fn write_inline_content(&mut self, line: &RenderedLine, meta_prefix: &str) -> io::Result<()> {
-        if let RenderedLine::Content { text, symbol_name, style, indent } = line {
+        if let RenderedLine::Content {
+            text,
+            symbol_name,
+            style,
+            indent,
+        } = line
+        {
             write!(self.stdout, "  {}", meta_prefix)?;
             write_metadata_line_with_symbol(
                 &mut self.stdout,

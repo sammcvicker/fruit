@@ -24,7 +24,7 @@ mod utils;
 // Re-export public types and functions
 pub use config::OutputConfig;
 pub use json::print_json;
-pub use markdown::{print_markdown, MarkdownFormatter};
+pub use markdown::{MarkdownFormatter, print_markdown};
 pub use streaming::StreamingFormatter;
 pub use tree::TreeFormatter;
 

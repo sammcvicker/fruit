@@ -6,13 +6,13 @@
 use std::io::{self, Write};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use crate::metadata::MetadataBlock;
+use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
 use crate::tree::TreeNode;
 
 use super::config::OutputConfig;
 use super::utils::{
-    calculate_wrap_width, continuation_prefix, render_metadata_block,
-    write_metadata_line_with_symbol, MetadataRenderResult, RenderedLine,
+    MetadataRenderResult, RenderedLine, calculate_wrap_width, continuation_prefix,
+    render_metadata_block, write_metadata_line_with_symbol,
 };
 
 /// Formatter for buffered tree output.
@@ -23,6 +23,59 @@ pub struct TreeFormatter {
 impl TreeFormatter {
     pub fn new(config: OutputConfig) -> Self {
         Self { config }
+    }
+
+    /// Build a MetadataBlock from TreeNode::File fields.
+    /// This provides a unified way to construct metadata from all available fields
+    /// (comment, types, todos, imports) stored in the TreeNode.
+    fn build_metadata_block(
+        comment: Option<&String>,
+        types: Option<&Vec<String>>,
+        todos: Option<&Vec<crate::tree::JsonTodoItem>>,
+        imports: Option<&crate::imports::FileImports>,
+    ) -> Option<MetadataBlock> {
+        let mut block = MetadataBlock::new();
+
+        // Add comment lines
+        if let Some(c) = comment {
+            block.comment_lines = c
+                .lines()
+                .map(|line| MetadataLine::new(line.to_string()))
+                .collect();
+        }
+
+        // Add type signature lines
+        if let Some(type_sigs) = types {
+            block.type_lines = type_sigs
+                .iter()
+                .map(|sig| MetadataLine::with_style(sig.clone(), LineStyle::TypeSignature))
+                .collect();
+        }
+
+        // Add TODO lines
+        if let Some(todo_items) = todos {
+            block.todo_lines = todo_items
+                .iter()
+                .map(|todo| {
+                    let content =
+                        format!("{}: {} (line {})", todo.marker_type, todo.text, todo.line);
+                    MetadataLine::with_style(content, LineStyle::Todo)
+                })
+                .collect();
+        }
+
+        // Add import lines
+        if let Some(file_imports) = imports {
+            let summary = file_imports.summary();
+            if !summary.is_empty() {
+                block.import_lines = vec![MetadataLine::with_style(
+                    format!("imports: {}", summary),
+                    LineStyle::Import,
+                )];
+            }
+        }
+
+        if block.is_empty() { None } else { Some(block) }
     }
 
     pub fn format(&self, node: &TreeNode) -> String {
@@ -61,7 +114,12 @@ impl TreeFormatter {
                 stdout.reset()?;
                 writeln!(stdout, "{}", cont_prefix)?;
             }
-            RenderedLine::Content { text, symbol_name, style, indent } => {
+            RenderedLine::Content {
+                text,
+                symbol_name,
+                style,
+                indent,
+            } => {
                 stdout.reset()?;
                 write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
                 write_metadata_line_with_symbol(
@@ -85,7 +143,13 @@ impl TreeFormatter {
         line: &RenderedLine,
         meta_prefix: &str,
     ) -> io::Result<()> {
-        if let RenderedLine::Content { text, symbol_name, style, indent } = line {
+        if let RenderedLine::Content {
+            text,
+            symbol_name,
+            style,
+            indent,
+        } = line
+        {
             write!(stdout, "  {}", meta_prefix)?;
             write_metadata_line_with_symbol(
                 stdout,
@@ -233,13 +297,25 @@ impl TreeFormatter {
         let connector = if is_last { "└── " } else { "├── " };
 
         match node {
-            TreeNode::File { name, comment, .. } => {
+            TreeNode::File {
+                name,
+                comment,
+                types,
+                todos,
+                imports,
+                ..
+            } => {
                 output.push_str(prefix);
                 output.push_str(connector);
                 output.push_str(name);
-                if let Some(c) = comment {
-                    // Convert comment to metadata block for unified handling
-                    let block = MetadataBlock::from_comments(c);
+
+                // Build metadata block from all available fields
+                if let Some(block) = Self::build_metadata_block(
+                    comment.as_ref(),
+                    types.as_ref(),
+                    todos.as_ref(),
+                    imports.as_ref(),
+                ) {
                     self.format_metadata_block_plain(output, &block, prefix, is_last);
                 } else {
                     output.push('\n');
@@ -295,15 +371,26 @@ impl TreeFormatter {
         let connector = if is_last { "└── " } else { "├── " };
 
         match node {
-            TreeNode::File { name, comment, .. } => {
+            TreeNode::File {
+                name,
+                comment,
+                types,
+                todos,
+                imports,
+                ..
+            } => {
                 write!(stdout, "{}{}", prefix, connector)?;
                 stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
                 write!(stdout, "{}", name)?;
                 stdout.reset()?;
 
-                if let Some(c) = comment {
-                    // Convert comment to metadata block for unified handling
-                    let block = MetadataBlock::from_comments(c);
+                // Build metadata block from all available fields
+                if let Some(block) = Self::build_metadata_block(
+                    comment.as_ref(),
+                    types.as_ref(),
+                    todos.as_ref(),
+                    imports.as_ref(),
+                ) {
                     self.print_metadata_block(stdout, &block, prefix, is_last)?;
                 } else {
                     writeln!(stdout)?;
@@ -432,5 +519,66 @@ mod tests {
 
         // Should count 1 directory (src) - root is not counted
         assert!(output.contains("1 directories, 3 files"));
+    }
+
+    #[test]
+    fn test_format_with_all_metadata() {
+        use crate::imports::FileImports;
+        use crate::tree::JsonTodoItem;
+
+        let tree = TreeNode::Dir {
+            name: ".".to_string(),
+            path: PathBuf::from("."),
+            children: vec![TreeNode::File {
+                name: "app.rs".to_string(),
+                path: PathBuf::from("app.rs"),
+                comment: Some("Main application module".to_string()),
+                types: Some(vec![
+                    "pub fn main()".to_string(),
+                    "pub struct App".to_string(),
+                ]),
+                todos: Some(vec![JsonTodoItem {
+                    marker_type: "TODO".to_string(),
+                    text: "Add error handling".to_string(),
+                    line: 42,
+                }]),
+                imports: Some(FileImports {
+                    std: vec!["std::io".to_string()],
+                    external: vec!["serde".to_string()],
+                    internal: vec![],
+                }),
+                size_bytes: None,
+                size_human: None,
+            }],
+        };
+
+        let formatter = TreeFormatter::new(OutputConfig {
+            use_color: false,
+            metadata: MetadataConfig::all(true, crate::metadata::MetadataOrder::CommentsFirst),
+            wrap_width: None,
+        });
+        let output = formatter.format(&tree);
+
+        // Verify all metadata types are present in output
+        assert!(
+            output.contains("Main application module"),
+            "Should contain comment"
+        );
+        assert!(
+            output.contains("pub fn main()"),
+            "Should contain type signature"
+        );
+        assert!(
+            output.contains("pub struct App"),
+            "Should contain type signature"
+        );
+        assert!(
+            output.contains("TODO: Add error handling (line 42)"),
+            "Should contain TODO"
+        );
+        assert!(
+            output.contains("imports: serde, std::{std::io}"),
+            "Should contain import summary"
+        );
     }
 }

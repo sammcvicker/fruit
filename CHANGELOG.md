@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- TreeFormatter now displays type signatures, TODOs, and imports in JSON/buffered output mode (#108)
+  - Previously only comments were shown; now all metadata types are properly rendered
+  - Unified metadata block construction ensures consistency with streaming output
 - Go block comment extraction no longer panics on edge cases with `*/` (#67)
 - TODO marker extraction now uses `unwrap_or_else` instead of fragile `unwrap()` (#68)
 - Test code now uses `expect()` with descriptive messages instead of bare `unwrap()` (#69)

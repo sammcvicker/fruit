@@ -28,7 +28,10 @@ pub fn calculate_wrap_width(
 }
 
 /// Check if the next non-empty line in a slice is indented relative to current indent.
-pub fn has_indented_children(lines: &[&crate::metadata::MetadataLine], current_indent: usize) -> bool {
+pub fn has_indented_children(
+    lines: &[&crate::metadata::MetadataLine],
+    current_indent: usize,
+) -> bool {
     lines
         .iter()
         .find(|l| !l.content.trim().is_empty())
@@ -214,18 +217,14 @@ pub enum MetadataRenderResult {
     /// Block is empty, just end the filename line
     Empty,
     /// Show first line inline on the same line as filename
-    Inline {
-        first: RenderedLine,
-    },
+    Inline { first: RenderedLine },
     /// Show first line inline, then remaining lines in a block below
     InlineWithBlock {
         first: RenderedLine,
         block_lines: Vec<RenderedLine>,
     },
     /// Show all lines in a block below the filename
-    Block {
-        lines: Vec<RenderedLine>,
-    },
+    Block { lines: Vec<RenderedLine> },
 }
 
 /// Render a metadata block into a structured result that formatters can write.
@@ -449,14 +448,12 @@ mod tests {
     fn test_has_indented_children_with_children() {
         use crate::metadata::{LineStyle, MetadataLine};
 
-        let lines = vec![
-            MetadataLine {
-                content: "child".to_string(),
-                style: LineStyle::TypeSignature,
-                symbol_name: None,
-                indent: 4,
-            },
-        ];
+        let lines = vec![MetadataLine {
+            content: "child".to_string(),
+            style: LineStyle::TypeSignature,
+            symbol_name: None,
+            indent: 4,
+        }];
         let line_refs: Vec<&MetadataLine> = lines.iter().collect();
         assert!(has_indented_children(&line_refs, 0));
     }
@@ -465,14 +462,12 @@ mod tests {
     fn test_has_indented_children_no_children() {
         use crate::metadata::{LineStyle, MetadataLine};
 
-        let lines = vec![
-            MetadataLine {
-                content: "sibling".to_string(),
-                style: LineStyle::TypeSignature,
-                symbol_name: None,
-                indent: 0,
-            },
-        ];
+        let lines = vec![MetadataLine {
+            content: "sibling".to_string(),
+            style: LineStyle::TypeSignature,
+            symbol_name: None,
+            indent: 0,
+        }];
         let line_refs: Vec<&MetadataLine> = lines.iter().collect();
         assert!(!has_indented_children(&line_refs, 0));
     }

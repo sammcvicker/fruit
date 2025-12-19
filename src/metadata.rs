@@ -565,7 +565,10 @@ mod tests {
     #[test]
     fn test_has_only_types_excludes_imports() {
         let mut block = MetadataBlock::new();
-        block.type_lines = vec![MetadataLine::with_style("fn foo()", LineStyle::TypeSignature)];
+        block.type_lines = vec![MetadataLine::with_style(
+            "fn foo()",
+            LineStyle::TypeSignature,
+        )];
         assert!(block.has_only_types());
 
         // Adding imports should make has_only_types return false

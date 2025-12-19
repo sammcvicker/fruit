@@ -13,10 +13,8 @@ use crate::file_utils::read_source_file;
 /// Pattern matches TODO, FIXME, HACK, XXX, BUG, NOTE at the start of comment text
 /// followed by colon and the actual message.
 static TODO_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)",
-    )
-    .expect("TODO_PATTERN regex is invalid")
+    Regex::new(r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)")
+        .expect("TODO_PATTERN regex is invalid")
 });
 
 /// A single TODO/FIXME marker extracted from a file.

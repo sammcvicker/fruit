@@ -465,10 +465,7 @@ fn test_large_file_types_extraction_skipped() {
     let repo = TestRepo::with_git();
 
     // Create a large file with type signatures
-    let large_content = format!(
-        "pub fn large_function() {{}}\n{}",
-        "x".repeat(1_100_000)
-    );
+    let large_content = format!("pub fn large_function() {{}}\n{}", "x".repeat(1_100_000));
     repo.add_file("large.rs", &large_content);
     repo.add_file("normal.rs", "pub fn normal_function() {}");
 

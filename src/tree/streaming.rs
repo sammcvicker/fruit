@@ -138,68 +138,69 @@ impl StreamingWalker {
         let extract_todo_markers = self.config.extract_todos;
         let extract_import_statements = self.config.extract_imports;
 
-        let metadata_results: Vec<(usize, Option<MetadataBlock>)> =
-            if self.config.parallel_workers == 0 {
-                // Auto-detect: use rayon's default thread pool
-                file_indices
-                    .par_iter()
-                    .map(|&i| {
-                        let path = &entries[i].path;
-                        let metadata = extract_metadata_from_path(
-                            path,
-                            extract_comments,
-                            extract_types,
-                            extract_todo_markers,
-                            extract_import_statements,
-                        );
-                        (i, metadata)
-                    })
-                    .collect()
-            } else {
-                // Use custom thread pool with specified worker count
-                match rayon::ThreadPoolBuilder::new()
-                    .num_threads(self.config.parallel_workers)
-                    .build()
-                {
-                    Ok(pool) => pool.install(|| {
-                        file_indices
-                            .par_iter()
-                            .map(|&i| {
-                                let path = &entries[i].path;
-                                let metadata = extract_metadata_from_path(
-                                    path,
-                                    extract_comments,
-                                    extract_types,
-                                    extract_todo_markers,
-                                    extract_import_statements,
-                                );
-                                (i, metadata)
-                            })
-                            .collect()
-                    }),
-                    Err(e) => {
-                        // Warn user and fall back to rayon's global pool
-                        eprintln!(
-                            "fruit: warning: failed to create thread pool with {} workers ({}), using default pool",
-                            self.config.parallel_workers, e
-                        );
-                        file_indices
-                            .par_iter()
-                            .map(|&i| {
-                                let path = &entries[i].path;
-                                let metadata = extract_metadata_from_path(
-                                    path,
-                                    extract_comments,
-                                    extract_types,
-                                    extract_todo_markers,
-                                    extract_import_statements,
-                                );
-                                (i, metadata)
-                            })
-                            .collect()
-                    }
+        let metadata_results: Vec<(usize, Option<MetadataBlock>)> = if self.config.parallel_workers
+            == 0
+        {
+            // Auto-detect: use rayon's default thread pool
+            file_indices
+                .par_iter()
+                .map(|&i| {
+                    let path = &entries[i].path;
+                    let metadata = extract_metadata_from_path(
+                        path,
+                        extract_comments,
+                        extract_types,
+                        extract_todo_markers,
+                        extract_import_statements,
+                    );
+                    (i, metadata)
+                })
+                .collect()
+        } else {
+            // Use custom thread pool with specified worker count
+            match rayon::ThreadPoolBuilder::new()
+                .num_threads(self.config.parallel_workers)
+                .build()
+            {
+                Ok(pool) => pool.install(|| {
+                    file_indices
+                        .par_iter()
+                        .map(|&i| {
+                            let path = &entries[i].path;
+                            let metadata = extract_metadata_from_path(
+                                path,
+                                extract_comments,
+                                extract_types,
+                                extract_todo_markers,
+                                extract_import_statements,
+                            );
+                            (i, metadata)
+                        })
+                        .collect()
+                }),
+                Err(e) => {
+                    // Warn user and fall back to rayon's global pool
+                    eprintln!(
+                        "fruit: warning: failed to create thread pool with {} workers ({}), using default pool",
+                        self.config.parallel_workers, e
+                    );
+                    file_indices
+                        .par_iter()
+                        .map(|&i| {
+                            let path = &entries[i].path;
+                            let metadata = extract_metadata_from_path(
+                                path,
+                                extract_comments,
+                                extract_types,
+                                extract_todo_markers,
+                                extract_import_statements,
+                            );
+                            (i, metadata)
+                        })
+                        .collect()
                 }
-            };
+            }
+        };
 
         // Build a map of index -> metadata for quick lookup
         let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
