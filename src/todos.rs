@@ -4,11 +4,20 @@
 //! Supported markers: TODO, FIXME, HACK, XXX, BUG, NOTE
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// Maximum file size for TODO extraction (1MB).
-const MAX_FILE_SIZE: u64 = 1_000_000;
+use crate::file_utils::read_source_file;
+
+/// Pattern matches TODO, FIXME, HACK, XXX, BUG, NOTE at the start of comment text
+/// followed by colon and the actual message.
+static TODO_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)",
+    )
+    .expect("TODO_PATTERN regex is invalid")
+});
 
 /// A single TODO/FIXME marker extracted from a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,86 +51,16 @@ pub struct TodoItem {
 /// - `FIXME - memory leak` → type="FIXME", text="memory leak"
 /// - `// TODO: implement` → type="TODO", text="implement"
 pub fn extract_todos(path: &Path) -> Option<Vec<TodoItem>> {
-    // Skip files that are too large
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
+    // read_source_file handles extension filtering and case-normalization
+    let (content, _extension) = read_source_file(path)?;
 
-    // Only process files with recognized extensions
-    let extension = path.extension()?.to_str()?;
-    if !is_supported_extension(extension) {
-        return None;
-    }
-
-    let content = std::fs::read_to_string(path).ok()?;
     let todos = extract_todos_from_content(&content);
 
     if todos.is_empty() { None } else { Some(todos) }
 }
 
-/// Check if an extension is supported for TODO extraction.
-fn is_supported_extension(ext: &str) -> bool {
-    matches!(
-        ext,
-        "rs" | "py"
-            | "js"
-            | "jsx"
-            | "ts"
-            | "tsx"
-            | "mjs"
-            | "cjs"
-            | "go"
-            | "c"
-            | "h"
-            | "cpp"
-            | "hpp"
-            | "cc"
-            | "cxx"
-            | "rb"
-            | "sh"
-            | "bash"
-            | "zsh"
-            | "java"
-            | "kt"
-            | "kts"
-            | "swift"
-            | "php"
-            | "cs"
-            | "lua"
-            | "pl"
-            | "pm"
-            | "r"
-            | "R"
-            | "scala"
-            | "clj"
-            | "cljs"
-            | "ex"
-            | "exs"
-            | "erl"
-            | "hrl"
-            | "hs"
-            | "ml"
-            | "mli"
-            | "fs"
-            | "fsx"
-            | "vue"
-            | "svelte"
-    )
-}
-
 /// Extract TODO items from file content.
 fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
-    // Pattern matches TODO, FIXME, HACK, XXX, BUG, NOTE at the start of comment text
-    // followed by colon and the actual message.
-    // The marker should appear after comment prefix, not in the middle of documentation.
-    // We require a colon to distinguish actual TODOs from mentions in documentation.
-    let pattern = Regex::new(
-        r"(?i)^\s*(?://+|/?\*+|#+|--+|;+)\s*!?\s*(TODO|FIXME|HACK|XXX|BUG|NOTE)\s*:\s*(.+)",
-    )
-    .expect("valid regex");
-
     let mut todos = Vec::new();
 
     for (line_idx, line) in content.lines().enumerate() {
@@ -131,8 +70,13 @@ fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
             continue;
         }
 
-        if let Some(caps) = pattern.captures(line) {
-            let marker_type = caps.get(1).map(|m| m.as_str().to_uppercase()).unwrap();
+        if let Some(caps) = TODO_PATTERN.captures(line) {
+            // Group 1 contains the marker type (TODO, FIXME, etc.)
+            // Group 2 contains the text after the colon
+            let marker_type = caps
+                .get(1)
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "TODO".to_string());
             let text = caps
                 .get(2)
                 .map(|m| m.as_str().trim().to_string())
@@ -348,5 +292,64 @@ fn bar() {}
         assert_eq!(clean_comment_text("text */"), "text");
         assert_eq!(clean_comment_text("text -->"), "text");
         assert_eq!(clean_comment_text("  spaced  "), "spaced");
+    }
+
+    // Edge case tests for issue #61
+
+    #[test]
+    fn test_todo_with_trailing_punctuation() {
+        let content = "// TODO: fix this bug!!!\n";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].text, "fix this bug!!!");
+    }
+
+    #[test]
+    fn test_todo_inside_doc_comment() {
+        // Doc comments with TODOs should still be captured
+        let content = "/// TODO: document this function\nfn foo() {}";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].text, "document this function");
+    }
+
+    #[test]
+    fn test_multiple_todos_same_line_type() {
+        let content = "// TODO: first\n// TODO: second\n// TODO: third";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 3);
+        assert_eq!(todos[0].line, 1);
+        assert_eq!(todos[1].line, 2);
+        assert_eq!(todos[2].line, 3);
+    }
+
+    #[test]
+    fn test_todo_preserves_line_numbers() {
+        let content = "\n\n\n// TODO: on line 4\n\n// FIXME: on line 6";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].line, 4);
+        assert_eq!(todos[1].line, 6);
+    }
+
+    #[test]
+    fn test_note_marker() {
+        let content = "# NOTE: important observation\n";
+        let todos = extract_todos_from_content(content);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].marker_type, "NOTE");
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let todos = extract_todos_from_content("");
+        assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn test_content_without_todos() {
+        let content = "// Regular comment\nfn main() {}\n// Another comment";
+        let todos = extract_todos_from_content(content);
+        assert!(todos.is_empty());
     }
 }

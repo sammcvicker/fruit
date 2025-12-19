@@ -1,6 +1,7 @@
 //! Fruit - A tree command that respects .gitignore and shows file comments
 
 pub mod comments;
+pub mod file_utils;
 pub mod git;
 pub mod imports;
 pub mod metadata;

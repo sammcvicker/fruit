@@ -1,330 +1,19 @@
-//! Directory tree walking logic
+//! StreamingWalker - streams output without building full tree in memory
 
 use std::path::{Path, PathBuf};
 
-use glob::Pattern;
 use rayon::prelude::*;
-use serde::Serialize;
 
 use crate::comments::extract_first_comment;
 use crate::git::{GitFilter, GitignoreFilter};
-use crate::imports::{FileImports, extract_imports};
+use crate::imports::extract_imports;
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
 use crate::todos::extract_todos;
 use crate::types::extract_type_signatures;
 
-// Re-export for convenience
-pub use crate::metadata::MetadataOrder;
-
-/// File filter that can use either gitignore patterns or git tracking status.
-pub enum FileFilter {
-    /// Filter based on .gitignore patterns (default)
-    Gitignore(GitignoreFilter),
-    /// Filter based on git tracking status (--tracked mode)
-    GitTracked(GitFilter),
-}
-
-impl FileFilter {
-    /// Check if a path should be included.
-    pub fn is_included(&self, path: &Path) -> bool {
-        match self {
-            FileFilter::Gitignore(f) => f.is_included(path),
-            FileFilter::GitTracked(f) => f.is_tracked(path),
-        }
-    }
-}
-
-// ============================================================================
-// Shared filtering functions used by both TreeWalker and StreamingWalker
-// ============================================================================
-
-/// Check if a directory has any included files (used for pruning empty directories).
-fn has_included_files(path: &Path, filter: &Option<FileFilter>) -> bool {
-    if let Some(f) = filter {
-        f.is_included(path)
-    } else {
-        // Without filter, assume directory has content
-        true
-    }
-}
-
-/// Check if a path should be included based on filter, show_all flag, and time filters.
-fn should_include_path(path: &Path, config: &WalkerConfig, filter: &Option<FileFilter>) -> bool {
-    // Check gitignore filter
-    if !config.show_all {
-        if let Some(f) = filter {
-            if !f.is_included(path) {
-                return false;
-            }
-        }
-    }
-
-    // Check time filter (applies to files only)
-    if path.is_file() && !passes_time_filter(path, config) {
-        return false;
-    }
-
-    true
-}
-
-/// Check if a path should be ignored based on name and ignore patterns.
-fn should_ignore_path(path: &Path, ignore_patterns: &[String]) -> bool {
-    let name = path
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    // Always ignore .git directory
-    if name == ".git" {
-        return true;
-    }
-
-    // Check custom ignore patterns
-    for pattern in ignore_patterns {
-        if name == *pattern || glob_match(pattern, &name) {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Serializable TODO item for JSON output.
-#[derive(Debug, Clone, Serialize)]
-pub struct JsonTodoItem {
-    #[serde(rename = "type")]
-    pub marker_type: String,
-    pub text: String,
-    pub line: usize,
-}
-
-impl From<&crate::todos::TodoItem> for JsonTodoItem {
-    fn from(item: &crate::todos::TodoItem) -> Self {
-        Self {
-            marker_type: item.marker_type.clone(),
-            text: item.text.clone(),
-            line: item.line,
-        }
-    }
-}
-
-/// TreeNode for JSON output - still builds full tree in memory.
-/// For large repos, use StreamingWalker instead for console output.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum TreeNode {
-    File {
-        name: String,
-        path: PathBuf,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        comment: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        types: Option<Vec<String>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        todos: Option<Vec<JsonTodoItem>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        imports: Option<FileImports>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        size_bytes: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        size_human: Option<String>,
-    },
-    Dir {
-        name: String,
-        path: PathBuf,
-        children: Vec<TreeNode>,
-    },
-}
-
-impl TreeNode {
-    pub fn name(&self) -> &str {
-        match self {
-            TreeNode::File { name, .. } => name,
-            TreeNode::Dir { name, .. } => name,
-        }
-    }
-
-    pub fn is_dir(&self) -> bool {
-        matches!(self, TreeNode::Dir { .. })
-    }
-}
-
-use std::time::SystemTime;
-
-#[derive(Debug, Clone, Default)]
-pub struct WalkerConfig {
-    pub show_all: bool,
-    pub max_depth: Option<usize>,
-    pub dirs_only: bool,
-    pub extract_comments: bool,
-    pub extract_types: bool,
-    pub extract_todos: bool,
-    pub extract_imports: bool,
-    pub show_size: bool,
-    pub ignore_patterns: Vec<String>,
-    /// Number of parallel workers for metadata extraction.
-    /// 0 = auto-detect (use all available cores)
-    /// 1 = sequential (no parallelism)
-    /// N = use N worker threads
-    pub parallel_workers: usize,
-    /// Only include files modified after this time
-    pub newer_than: Option<SystemTime>,
-    /// Only include files modified before this time
-    pub older_than: Option<SystemTime>,
-}
-
-pub struct TreeWalker {
-    config: WalkerConfig,
-    filter: Option<FileFilter>,
-}
-
-impl TreeWalker {
-    pub fn new(config: WalkerConfig) -> Self {
-        Self {
-            config,
-            filter: None,
-        }
-    }
-
-    pub fn with_filter(mut self, filter: FileFilter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-
-    /// Legacy method for backwards compatibility - use with_filter instead.
-    pub fn with_git_filter(self, filter: GitFilter) -> Self {
-        self.with_filter(FileFilter::GitTracked(filter))
-    }
-
-    /// Set gitignore-based filtering (default behavior).
-    pub fn with_gitignore_filter(self, filter: GitignoreFilter) -> Self {
-        self.with_filter(FileFilter::Gitignore(filter))
-    }
-
-    pub fn walk(&self, root: &Path) -> Option<TreeNode> {
-        self.walk_dir(root, 0)
-    }
-
-    fn walk_dir(&self, path: &Path, depth: usize) -> Option<TreeNode> {
-        // Skip symlinks to prevent infinite loops and directory traversal issues
-        if path.is_symlink() {
-            return None;
-        }
-
-        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
-
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
-
-        if path.is_file() {
-            if self.config.dirs_only {
-                return None;
-            }
-            if !should_include_path(path, &self.config, &self.filter) {
-                return None;
-            }
-            let comment = if self.config.extract_comments {
-                extract_first_comment(path)
-            } else {
-                None
-            };
-            let types = if self.config.extract_types {
-                extract_type_signatures(path)
-                    .map(|sigs| sigs.into_iter().map(|(sig, _sym, _indent)| sig).collect())
-            } else {
-                None
-            };
-            let todos = if self.config.extract_todos {
-                extract_todos(path).map(|items| items.iter().map(JsonTodoItem::from).collect())
-            } else {
-                None
-            };
-            let imports = if self.config.extract_imports {
-                extract_imports(path)
-            } else {
-                None
-            };
-            let (size_bytes, size_human) = if self.config.show_size {
-                get_file_size(path)
-            } else {
-                (None, None)
-            };
-            return Some(TreeNode::File {
-                name,
-                path: path.to_path_buf(),
-                comment,
-                types,
-                todos,
-                imports,
-                size_bytes,
-                size_human,
-            });
-        }
-
-        if !path.is_dir() {
-            return None;
-        }
-
-        // If at max depth, return the directory but don't descend
-        if at_max_depth {
-            return Some(TreeNode::Dir {
-                name,
-                path: path.to_path_buf(),
-                children: Vec::new(),
-            });
-        }
-
-        let mut children = Vec::new();
-        let entries = match std::fs::read_dir(path) {
-            Ok(e) => e,
-            Err(_) => return None,
-        };
-
-        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by_key(|a| a.file_name());
-
-        for entry in entries {
-            let entry_path = entry.path();
-
-            if should_ignore_path(&entry_path, &self.config.ignore_patterns) {
-                continue;
-            }
-
-            if let Some(node) = self.walk_dir(&entry_path, depth + 1) {
-                // Skip empty directories (but only if not in dirs_only mode
-                // and not showing a depth-limited directory)
-                if let TreeNode::Dir {
-                    children: ref c, ..
-                } = node
-                {
-                    // In dirs_only mode, always show directories
-                    // Otherwise, skip truly empty directories (those with no tracked files)
-                    if c.is_empty()
-                        && !self.config.dirs_only
-                        && !has_included_files(&entry_path, &self.filter)
-                    {
-                        continue;
-                    }
-                }
-                children.push(node);
-            }
-        }
-
-        Some(TreeNode::Dir {
-            name,
-            path: path.to_path_buf(),
-            children,
-        })
-    }
-}
-
-fn glob_match(pattern: &str, name: &str) -> bool {
-    Pattern::new(pattern)
-        .map(|p| p.matches(name))
-        .unwrap_or(false)
-}
+use super::config::WalkerConfig;
+use super::filter::FileFilter;
+use super::utils::{has_included_files, should_ignore_path, should_include_path};
 
 /// Entry collected during tree traversal for parallel metadata extraction.
 #[derive(Debug)]
@@ -335,14 +24,6 @@ struct CollectedEntry {
     is_last: bool,
     prefix: String,
     is_root: bool,
-}
-
-/// Streaming tree walker that outputs directly without building tree in memory.
-/// Uses O(depth) memory instead of O(files) for the tree structure.
-/// Supports parallel metadata extraction when parallel_workers != 1.
-pub struct StreamingWalker {
-    config: WalkerConfig,
-    filter: Option<FileFilter>,
 }
 
 /// Callback for streaming output - receives node information for display.
@@ -360,6 +41,14 @@ pub trait StreamingOutput {
     ) -> std::io::Result<()>;
 
     fn finish(&mut self, dir_count: usize, file_count: usize) -> std::io::Result<()>;
+}
+
+/// Streaming tree walker that outputs directly without building tree in memory.
+/// Uses O(depth) memory instead of O(files) for the tree structure.
+/// Supports parallel metadata extraction when parallel_workers != 1.
+pub struct StreamingWalker {
+    config: WalkerConfig,
+    filter: Option<FileFilter>,
 }
 
 impl StreamingWalker {
@@ -488,8 +177,12 @@ impl StreamingWalker {
                             })
                             .collect()
                     }),
-                    Err(_) => {
-                        // Fall back to rayon's global pool if custom pool creation fails
+                    Err(e) => {
+                        // Warn user and fall back to rayon's global pool
+                        eprintln!(
+                            "fruit: warning: failed to create thread pool with {} workers ({}), using default pool",
+                            self.config.parallel_workers, e
+                        );
                         file_indices
                             .par_iter()
                             .map(|&i| {
@@ -512,11 +205,65 @@ impl StreamingWalker {
         let mut metadata_map: std::collections::HashMap<usize, Option<MetadataBlock>> =
             metadata_results.into_iter().collect();
 
+        // If todos_only is enabled, we need to filter files without TODOs
+        // and track which indices to skip
+        let skip_indices: std::collections::HashSet<usize> = if self.config.todos_only {
+            entries
+                .iter()
+                .enumerate()
+                .filter_map(|(i, entry)| {
+                    if entry.is_dir {
+                        None // Don't skip directories
+                    } else {
+                        // Check if this file has TODOs
+                        let has_todos = metadata_map
+                            .get(&i)
+                            .and_then(|opt| opt.as_ref())
+                            .is_some_and(|meta| !meta.todo_lines.is_empty());
+                        if has_todos {
+                            None // Don't skip
+                        } else {
+                            Some(i) // Skip this file
+                        }
+                    }
+                })
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         // Phase 3: Output entries in tree order
         let mut dir_count = 0usize;
         let mut file_count = 0usize;
 
-        for (i, entry) in entries.iter().enumerate() {
+        // We need to track is_last correctly after filtering
+        // Group entries by parent prefix and recalculate is_last
+        let filtered_entries: Vec<_> = entries
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !skip_indices.contains(i))
+            .collect();
+
+        // Calculate which filtered entries are last among their siblings
+        let is_last_map: std::collections::HashMap<usize, bool> = {
+            let mut map = std::collections::HashMap::new();
+            let mut prefix_counts: std::collections::HashMap<&str, Vec<usize>> =
+                std::collections::HashMap::new();
+
+            for &(i, entry) in &filtered_entries {
+                prefix_counts.entry(&entry.prefix).or_default().push(i);
+            }
+
+            for indices in prefix_counts.values() {
+                for (pos, &idx) in indices.iter().enumerate() {
+                    map.insert(idx, pos == indices.len() - 1);
+                }
+            }
+
+            map
+        };
+
+        for (i, entry) in filtered_entries {
             let metadata = if entry.is_dir {
                 None
             } else {
@@ -530,11 +277,14 @@ impl StreamingWalker {
                 None
             };
 
+            // Use recalculated is_last, or original if not in map (shouldn't happen)
+            let is_last = is_last_map.get(&i).copied().unwrap_or(entry.is_last);
+
             output.output_node(
                 &entry.name,
                 metadata,
                 entry.is_dir,
-                entry.is_last,
+                is_last,
                 &entry.prefix,
                 entry.is_root,
                 size,
@@ -749,6 +499,16 @@ impl StreamingWalker {
                     continue;
                 }
                 let metadata = self.extract_metadata(&entry_path);
+                // If todos_only is enabled, skip files without TODOs
+                if self.config.todos_only {
+                    if let Some(ref meta) = metadata {
+                        if meta.todo_lines.is_empty() {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
                 valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
@@ -874,93 +634,4 @@ fn extract_metadata_from_path(
     }
 
     if block.is_empty() { None } else { Some(block) }
-}
-
-/// Get file size and return both bytes and human-readable format.
-fn get_file_size(path: &Path) -> (Option<u64>, Option<String>) {
-    match path.metadata() {
-        Ok(meta) => {
-            let size = meta.len();
-            (Some(size), Some(format_size(size)))
-        }
-        Err(_) => (None, None),
-    }
-}
-
-/// Format a size in bytes to human-readable format.
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.1}G", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1}M", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1}K", bytes as f64 / KB as f64)
-    } else {
-        format!("{}B", bytes)
-    }
-}
-
-/// Check if a file passes the time filter based on its modification time.
-fn passes_time_filter(path: &Path, config: &WalkerConfig) -> bool {
-    // If no time filters, pass
-    if config.newer_than.is_none() && config.older_than.is_none() {
-        return true;
-    }
-
-    // Get modification time
-    let mtime = match path.metadata().and_then(|m| m.modified()) {
-        Ok(t) => t,
-        Err(_) => return true, // If we can't get mtime, include the file
-    };
-
-    // Check newer_than filter
-    if let Some(newer) = config.newer_than {
-        if mtime < newer {
-            return false;
-        }
-    }
-
-    // Check older_than filter
-    if let Some(older) = config.older_than {
-        if mtime > older {
-            return false;
-        }
-    }
-
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_glob_match() {
-        // Basic patterns
-        assert!(glob_match("*.rs", "main.rs"));
-        assert!(glob_match("*.rs", "lib.rs"));
-        assert!(!glob_match("*.rs", "main.py"));
-        assert!(glob_match("test*", "test_foo"));
-        assert!(!glob_match("test*", "foo_test"));
-        assert!(glob_match("exact", "exact"));
-        assert!(!glob_match("exact", "notexact"));
-
-        // Single character wildcard
-        assert!(glob_match("test?.rs", "test1.rs"));
-        assert!(glob_match("test?.rs", "testa.rs"));
-        assert!(!glob_match("test?.rs", "test12.rs"));
-
-        // Character classes
-        assert!(glob_match("[abc].txt", "a.txt"));
-        assert!(glob_match("[abc].txt", "b.txt"));
-        assert!(!glob_match("[abc].txt", "d.txt"));
-
-        // Character ranges
-        assert!(glob_match("[a-z].txt", "x.txt"));
-        assert!(!glob_match("[a-z].txt", "X.txt"));
-    }
 }

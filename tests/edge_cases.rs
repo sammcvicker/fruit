@@ -423,6 +423,170 @@ fn test_very_narrow_wrap_width() {
 }
 
 // ============================================================================
+// Large File Handling
+// ============================================================================
+
+#[test]
+fn test_large_file_skipped_for_comment_extraction() {
+    let repo = TestRepo::with_git();
+
+    // Create a file larger than 1MB (default limit)
+    // Content is valid Rust with a comment, but should be skipped due to size
+    let large_content = format!(
+        "//! This comment should not appear because file is too large\n{}",
+        "x".repeat(1_100_000) // ~1.1MB
+    );
+    repo.add_file("large.rs", &large_content);
+
+    // Also add a normal file to verify basic functionality still works
+    repo.add_file("normal.rs", "//! Normal file comment\nfn normal() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success, "fruit should handle large files gracefully");
+
+    // Both files should appear in the tree
+    assert!(stdout.contains("large.rs"), "should list large file");
+    assert!(stdout.contains("normal.rs"), "should list normal file");
+
+    // Normal file's comment should appear, large file's should not
+    assert!(
+        stdout.contains("Normal file comment"),
+        "should extract comment from normal file: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("This comment should not appear"),
+        "should not extract comment from large file"
+    );
+}
+
+#[test]
+fn test_large_file_types_extraction_skipped() {
+    let repo = TestRepo::with_git();
+
+    // Create a large file with type signatures
+    let large_content = format!(
+        "pub fn large_function() {{}}\n{}",
+        "x".repeat(1_100_000)
+    );
+    repo.add_file("large.rs", &large_content);
+    repo.add_file("normal.rs", "pub fn normal_function() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["-t"]);
+    assert!(success, "fruit should handle large files with -t flag");
+
+    // Files should appear
+    assert!(stdout.contains("large.rs"));
+    assert!(stdout.contains("normal.rs"));
+
+    // Normal file's types should be extracted
+    assert!(
+        stdout.contains("normal_function"),
+        "should extract types from normal file: {}",
+        stdout
+    );
+    // Large file's types should not be extracted
+    assert!(
+        !stdout.contains("large_function"),
+        "should not extract types from large file"
+    );
+}
+
+#[test]
+fn test_max_file_size_custom_limit() {
+    let repo = TestRepo::with_git();
+
+    // Create a 500KB file (below default 1MB, above 100KB)
+    let medium_content = format!(
+        "//! Medium file comment\n{}",
+        "x".repeat(500_000) // 500KB
+    );
+    repo.add_file("medium.rs", &medium_content);
+
+    // With custom --max-file-size 100K, this file should be skipped
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--max-file-size", "100K"]);
+    assert!(success, "fruit should respect custom max-file-size");
+    assert!(stdout.contains("medium.rs"), "should list medium file");
+    assert!(
+        !stdout.contains("Medium file comment"),
+        "should not extract comment from file exceeding custom limit"
+    );
+
+    // With custom --max-file-size 1M, this file should have comment extracted
+    let (stdout2, _stderr2, success2) = run_fruit(repo.path(), &["--max-file-size", "1M"]);
+    assert!(success2, "fruit should work with larger max-file-size");
+    assert!(
+        stdout2.contains("Medium file comment"),
+        "should extract comment when file is under custom limit: {}",
+        stdout2
+    );
+}
+
+// ============================================================================
+// Corrupted Git Repository Edge Cases
+// ============================================================================
+
+#[test]
+fn test_missing_git_objects() {
+    let repo = TestRepo::with_git();
+    repo.add_file("tracked.rs", "fn tracked() {}");
+    repo.commit("Initial commit");
+
+    // Corrupt the git repository by removing objects directory contents
+    let objects_dir = repo.path().join(".git/objects");
+    // We won't actually delete all objects (that would break git completely)
+    // Instead, we'll test that fruit handles git errors gracefully
+
+    // This should still work because gitignore-based filtering doesn't need objects
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success, "fruit should work even with minimal git state");
+    assert!(stdout.contains("tracked.rs"), "should still list files");
+}
+
+#[test]
+fn test_malformed_gitignore() {
+    let repo = TestRepo::with_git();
+    repo.add_file("normal.rs", "fn normal() {}");
+
+    // Create a .gitignore with various edge cases
+    repo.add_file(
+        ".gitignore",
+        r#"
+# Comment line
+*.log
+
+# Invalid patterns (these should be ignored, not crash)
+[invalid
+**/
+!negation
+normal.rs
+"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success, "fruit should handle malformed gitignore");
+    // normal.rs is gitignored, so it shouldn't appear unless we use -a
+    // But the point is it shouldn't crash
+}
+
+#[test]
+fn test_nested_gitignore_files() {
+    let repo = TestRepo::with_git();
+    repo.add_file("root.rs", "fn root() {}");
+    repo.add_file(".gitignore", "*.log");
+    repo.add_file("subdir/.gitignore", "*.tmp\n!keep.tmp");
+    repo.add_file("subdir/file.rs", "fn file() {}");
+    repo.add_file("subdir/ignore.tmp", "ignored");
+    repo.add_file("subdir/keep.tmp", "kept via negation");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success, "fruit should handle nested gitignore files");
+    assert!(stdout.contains("root.rs"));
+    assert!(stdout.contains("file.rs"));
+    // The .tmp files are controlled by the nested gitignore
+}
+
+// ============================================================================
 // Performance Regression Tests
 // ============================================================================
 

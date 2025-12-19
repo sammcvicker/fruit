@@ -8,10 +8,8 @@ use regex::Regex;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::file_utils::read_source_file;
 use crate::metadata::{MetadataBlock, MetadataExtractor};
-
-/// Maximum file size for type extraction (1MB)
-const MAX_FILE_SIZE: u64 = 1_000_000;
 
 /// Calculate the indentation level of a line (number of spaces, tabs = 4 spaces).
 fn calculate_indent(line: &str) -> usize {
@@ -30,20 +28,13 @@ fn calculate_indent(line: &str) -> usize {
 /// Returns a list of (signature, symbol_name, indent_level) tuples.
 /// indent_level is the number of spaces (tabs are converted to 4 spaces).
 pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
-    // Skip files that are too large
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
+    let (content, extension) = read_source_file(path)?;
 
-    let extension = path.extension()?.to_str()?;
-    let content = std::fs::read_to_string(path).ok()?;
-
+    // Extension is already normalized to lowercase by read_source_file
     let signatures = match extension {
         "rs" => extract_rust_signatures(&content),
-        "ts" | "tsx" | "mts" | "cts" => extract_typescript_signatures(&content),
-        "js" | "jsx" | "mjs" | "cjs" => extract_javascript_signatures(&content),
+        "ts" => extract_typescript_signatures(&content),
+        "js" => extract_javascript_signatures(&content),
         "py" => extract_python_signatures(&content),
         "go" => extract_go_signatures(&content),
         _ => None,
@@ -55,18 +46,24 @@ pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize
 // Static regex patterns for each language
 
 // Rust patterns - with capture groups for symbol names
-static RUST_PUB_FN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+(async\s+)?fn\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_STRUCT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+struct\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+enum\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_TRAIT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+trait\s+(\w+)[^{;]*").unwrap());
-static RUST_PUB_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+type\s+(\w+)[^;]+").unwrap());
-static RUST_PUB_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").unwrap());
+static RUST_PUB_FN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+(async\s+)?fn\s+(\w+)[^{;]*").expect("RUST_PUB_FN regex is invalid")
+});
+static RUST_PUB_STRUCT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+struct\s+(\w+)[^{;]*").expect("RUST_PUB_STRUCT regex is invalid")
+});
+static RUST_PUB_ENUM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+enum\s+(\w+)[^{;]*").expect("RUST_PUB_ENUM regex is invalid")
+});
+static RUST_PUB_TRAIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+trait\s+(\w+)[^{;]*").expect("RUST_PUB_TRAIT regex is invalid")
+});
+static RUST_PUB_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+type\s+(\w+)[^;]+").expect("RUST_PUB_TYPE regex is invalid")
+});
+static RUST_PUB_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^pub\s+const\s+(\w+):\s*[^=]+").expect("RUST_PUB_CONST regex is invalid")
+});
 
 fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -124,18 +121,26 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
 }
 
 // TypeScript patterns - with capture groups for symbol names
-static TS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_INTERFACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+interface\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+type\s+(\w+)[^=]*=\s*[^;{]+").unwrap());
-static TS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(abstract\s+)?class\s+(\w+)[^{]*").unwrap());
-static TS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+):\s*[^=]+").unwrap());
-static TS_EXPORT_ENUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").unwrap());
+static TS_EXPORT_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(async\s+)?function\s+(\w+)[^{]*")
+        .expect("TS_EXPORT_FUNCTION regex is invalid")
+});
+static TS_EXPORT_INTERFACE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+interface\s+(\w+)[^{]*").expect("TS_EXPORT_INTERFACE regex is invalid")
+});
+static TS_EXPORT_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+type\s+(\w+)[^=]*=\s*[^;{]+").expect("TS_EXPORT_TYPE regex is invalid")
+});
+static TS_EXPORT_CLASS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(abstract\s+)?class\s+(\w+)[^{]*")
+        .expect("TS_EXPORT_CLASS regex is invalid")
+});
+static TS_EXPORT_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+const\s+(\w+):\s*[^=]+").expect("TS_EXPORT_CONST regex is invalid")
+});
+static TS_EXPORT_ENUM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").expect("TS_EXPORT_ENUM regex is invalid")
+});
 
 fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -189,12 +194,16 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, u
 }
 
 // JavaScript patterns (subset of TypeScript, no type annotations) - with capture groups
-static JS_EXPORT_FUNCTION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+(async\s+)?function\s+(\w+)\s*\([^)]*\)").unwrap());
-static JS_EXPORT_CLASS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+class\s+(\w+)[^{]*").unwrap());
-static JS_EXPORT_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^export\s+const\s+(\w+)\s*=").unwrap());
+static JS_EXPORT_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+(async\s+)?function\s+(\w+)\s*\([^)]*\)")
+        .expect("JS_EXPORT_FUNCTION regex is invalid")
+});
+static JS_EXPORT_CLASS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+class\s+(\w+)[^{]*").expect("JS_EXPORT_CLASS regex is invalid")
+});
+static JS_EXPORT_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^export\s+const\s+(\w+)\s*=").expect("JS_EXPORT_CONST regex is invalid")
+});
 
 fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -233,11 +242,23 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, u
 }
 
 // Python patterns - with capture groups for symbol names
-static PY_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
-static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+").unwrap());
-static PY_CLASS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").unwrap());
+// Functions with return type annotations (preferred, more informative)
+static PY_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
+        .expect("PY_DEF_WITH_RETURN regex is invalid")
+});
+static PY_ASYNC_DEF_WITH_RETURN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)\s*->\s*[^:]+")
+        .expect("PY_ASYNC_DEF_WITH_RETURN regex is invalid")
+});
+// Functions without return type annotations (fallback)
+static PY_DEF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^def\s+(\w+)\s*\([^)]*\)").expect("PY_DEF regex is invalid"));
+static PY_ASYNC_DEF: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^async\s+def\s+(\w+)\s*\([^)]*\)").expect("PY_ASYNC_DEF regex is invalid")
+});
+static PY_CLASS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").expect("PY_CLASS regex is invalid"));
 
 fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -261,13 +282,24 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
         let indent = calculate_indent(line);
 
         // Check each pattern (async first to avoid partial matches)
+        // Try typed versions first (more informative), then fall back to untyped
         // Use pattern matching to safely handle capture groups
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
             }
+        } else if let Some(caps) = PY_ASYNC_DEF.captures(trimmed) {
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
+            if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
+                let sig = clean_signature(full.as_str());
+                signatures.push((sig, sym_match.as_str().to_string(), indent));
+            }
+        } else if let Some(caps) = PY_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
                 signatures.push((sig, sym_match.as_str().to_string(), indent));
@@ -284,16 +316,22 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
 }
 
 // Go patterns - exported items start with uppercase - with capture groups
-static GO_EXPORTED_FUNC: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
-static GO_EXPORTED_METHOD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^func\s+\([^)]+\)\s*([A-Z]\w*)\s*\([^)]*\)[^{]*").unwrap());
-static GO_EXPORTED_TYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^type\s+([A-Z]\w*)\s+\w+").unwrap());
-static GO_EXPORTED_CONST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^const\s+([A-Z]\w*)\s*[^=]*=").unwrap());
-static GO_EXPORTED_VAR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").unwrap());
+static GO_EXPORTED_FUNC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^func\s+([A-Z]\w*)\s*\([^)]*\)[^{]*").expect("GO_EXPORTED_FUNC regex is invalid")
+});
+static GO_EXPORTED_METHOD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^func\s+\([^)]+\)\s*([A-Z]\w*)\s*\([^)]*\)[^{]*")
+        .expect("GO_EXPORTED_METHOD regex is invalid")
+});
+static GO_EXPORTED_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^type\s+([A-Z]\w*)\s+\w+").expect("GO_EXPORTED_TYPE regex is invalid")
+});
+static GO_EXPORTED_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^const\s+([A-Z]\w*)\s*[^=]*=").expect("GO_EXPORTED_CONST regex is invalid")
+});
+static GO_EXPORTED_VAR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").expect("GO_EXPORTED_VAR regex is invalid")
+});
 
 fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
     let mut signatures = Vec::new();
@@ -530,7 +568,7 @@ function privateFunc() {}
     }
 
     #[test]
-    fn test_python_typed_functions() {
+    fn test_python_functions() {
         let content = r#"
 """Module docstring."""
 
@@ -538,8 +576,16 @@ def process(data: str) -> dict:
     """Process data."""
     return {}
 
+def simple_func(items):
+    """Simple function without type annotation."""
+    return items
+
 async def fetch(url: str) -> bytes:
     """Fetch from URL."""
+    pass
+
+async def fetch_untyped(url):
+    """Async function without type annotation."""
     pass
 
 class UserService:
@@ -553,13 +599,46 @@ class _PrivateClass:
     pass
 "#;
         let sigs = extract_python_signatures(content).unwrap();
-        assert_eq!(sigs.len(), 3);
+        assert_eq!(sigs.len(), 5, "should capture 5 signatures: {:?}", sigs);
+
+        // Typed functions
         assert!(sigs[0].0.starts_with("def process"));
         assert_eq!(sigs[0].1, "process");
-        assert!(sigs[1].0.starts_with("async def fetch"));
-        assert_eq!(sigs[1].1, "fetch");
-        assert!(sigs[2].0.starts_with("class UserService"));
-        assert_eq!(sigs[2].1, "UserService");
+
+        // Untyped function
+        assert!(sigs[1].0.starts_with("def simple_func"));
+        assert_eq!(sigs[1].1, "simple_func");
+
+        // Typed async
+        assert!(sigs[2].0.starts_with("async def fetch"));
+        assert_eq!(sigs[2].1, "fetch");
+
+        // Untyped async
+        assert!(sigs[3].0.starts_with("async def fetch_untyped"));
+        assert_eq!(sigs[3].1, "fetch_untyped");
+
+        // Class
+        assert!(sigs[4].0.starts_with("class UserService"));
+        assert_eq!(sigs[4].1, "UserService");
+    }
+
+    #[test]
+    fn test_python_typed_functions() {
+        // Legacy test for backward compatibility - typed functions still work
+        let content = r#"
+def process(data: str) -> dict:
+    return {}
+
+async def fetch(url: str) -> bytes:
+    pass
+
+class UserService:
+    pass
+"#;
+        let sigs = extract_python_signatures(content).unwrap();
+        assert_eq!(sigs.len(), 3);
+        assert!(sigs[0].0.contains("->"));
+        assert!(sigs[1].0.contains("->"));
     }
 
     #[test]

@@ -13,14 +13,8 @@ pub enum LineStyle {
     /// Standard comment display (dim gray)
     #[default]
     Comment,
-    /// Type signature display (for future use)
+    /// Type signature display
     TypeSignature,
-    /// Class/struct name display (for future use)
-    ClassName,
-    /// Method/function name display (for future use)
-    MethodName,
-    /// Docstring display (for future use)
-    Docstring,
     /// TODO/FIXME marker display
     Todo,
     /// Import/dependency display
@@ -33,9 +27,6 @@ impl LineStyle {
         match self {
             LineStyle::Comment => Color::Black,
             LineStyle::TypeSignature => Color::Cyan,
-            LineStyle::ClassName => Color::Yellow,
-            LineStyle::MethodName => Color::Green,
-            LineStyle::Docstring => Color::Black,
             LineStyle::Todo => Color::Yellow,
             LineStyle::Import => Color::Magenta,
         }
@@ -43,7 +34,7 @@ impl LineStyle {
 
     /// Whether this style should use intense/bright colors.
     pub fn is_intense(&self) -> bool {
-        matches!(self, LineStyle::Comment | LineStyle::Docstring)
+        matches!(self, LineStyle::Comment)
     }
 }
 
@@ -171,14 +162,36 @@ impl MetadataBlock {
             && self.import_lines.is_empty()
     }
 
-    /// Check if only comments are present (no types or todos).
+    /// Check if only comments are present (no types, todos, or imports).
     pub fn has_only_comments(&self) -> bool {
-        !self.comment_lines.is_empty() && self.type_lines.is_empty() && self.todo_lines.is_empty()
+        !self.comment_lines.is_empty()
+            && self.type_lines.is_empty()
+            && self.todo_lines.is_empty()
+            && self.import_lines.is_empty()
     }
 
-    /// Check if only types are present (no comments or todos).
+    /// Check if only types are present (no comments, todos, or imports).
     pub fn has_only_types(&self) -> bool {
-        self.comment_lines.is_empty() && !self.type_lines.is_empty() && self.todo_lines.is_empty()
+        self.comment_lines.is_empty()
+            && !self.type_lines.is_empty()
+            && self.todo_lines.is_empty()
+            && self.import_lines.is_empty()
+    }
+
+    /// Check if only imports are present (no comments, types, or todos).
+    pub fn has_only_imports(&self) -> bool {
+        self.comment_lines.is_empty()
+            && self.type_lines.is_empty()
+            && self.todo_lines.is_empty()
+            && !self.import_lines.is_empty()
+    }
+
+    /// Check if only todos are present (no comments, types, or imports).
+    pub fn has_only_todos(&self) -> bool {
+        self.comment_lines.is_empty()
+            && self.type_lines.is_empty()
+            && !self.todo_lines.is_empty()
+            && self.import_lines.is_empty()
     }
 
     /// Check if both comments and types are present.
@@ -270,7 +283,10 @@ impl MetadataBlock {
 
     /// Total number of lines (not counting separator).
     pub fn total_lines(&self) -> usize {
-        self.comment_lines.len() + self.type_lines.len() + self.todo_lines.len()
+        self.comment_lines.len()
+            + self.type_lines.len()
+            + self.todo_lines.len()
+            + self.import_lines.len()
     }
 }
 
@@ -533,5 +549,59 @@ mod tests {
 
         let no_prefix = MetadataConfig::comments_only(false);
         assert_eq!(no_prefix.prefix_str(), "");
+    }
+
+    #[test]
+    fn test_has_only_comments_excludes_imports() {
+        let mut block = MetadataBlock::new();
+        block.comment_lines = vec![MetadataLine::new("comment")];
+        assert!(block.has_only_comments());
+
+        // Adding imports should make has_only_comments return false
+        block.import_lines = vec![MetadataLine::with_style("use foo", LineStyle::Import)];
+        assert!(!block.has_only_comments());
+    }
+
+    #[test]
+    fn test_has_only_types_excludes_imports() {
+        let mut block = MetadataBlock::new();
+        block.type_lines = vec![MetadataLine::with_style("fn foo()", LineStyle::TypeSignature)];
+        assert!(block.has_only_types());
+
+        // Adding imports should make has_only_types return false
+        block.import_lines = vec![MetadataLine::with_style("use foo", LineStyle::Import)];
+        assert!(!block.has_only_types());
+    }
+
+    #[test]
+    fn test_has_only_imports() {
+        let mut block = MetadataBlock::new();
+
+        // Empty block is not "only imports"
+        assert!(!block.has_only_imports());
+
+        // Only imports
+        block.import_lines = vec![MetadataLine::with_style("use foo", LineStyle::Import)];
+        assert!(block.has_only_imports());
+
+        // Adding comments should make has_only_imports return false
+        block.comment_lines = vec![MetadataLine::new("comment")];
+        assert!(!block.has_only_imports());
+    }
+
+    #[test]
+    fn test_has_only_todos() {
+        let mut block = MetadataBlock::new();
+
+        // Empty block is not "only todos"
+        assert!(!block.has_only_todos());
+
+        // Only todos
+        block.todo_lines = vec![MetadataLine::with_style("TODO: fix", LineStyle::Todo)];
+        assert!(block.has_only_todos());
+
+        // Adding imports should make has_only_todos return false
+        block.import_lines = vec![MetadataLine::with_style("use foo", LineStyle::Import)];
+        assert!(!block.has_only_todos());
     }
 }

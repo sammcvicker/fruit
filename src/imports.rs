@@ -8,8 +8,7 @@ use serde::Serialize;
 use std::path::Path;
 use std::sync::LazyLock;
 
-/// Maximum file size for import extraction (1MB)
-const MAX_FILE_SIZE: u64 = 1_000_000;
+use crate::file_utils::read_source_file;
 
 /// Categorized imports from a source file.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -53,20 +52,13 @@ impl FileImports {
 
 /// Extract imports from a file.
 pub fn extract_imports(path: &Path) -> Option<FileImports> {
-    // Skip files that are too large
-    if let Ok(metadata) = path.metadata() {
-        if metadata.len() > MAX_FILE_SIZE {
-            return None;
-        }
-    }
+    let (content, extension) = read_source_file(path)?;
 
-    let extension = path.extension()?.to_str()?;
-    let content = std::fs::read_to_string(path).ok()?;
-
+    // Extension is already normalized to lowercase by read_source_file
     let imports = match extension {
         "rs" => extract_rust_imports(&content),
-        "ts" | "tsx" | "mts" | "cts" => extract_typescript_imports(&content),
-        "js" | "jsx" | "mjs" | "cjs" => extract_javascript_imports(&content),
+        "ts" => extract_typescript_imports(&content),
+        "js" => extract_javascript_imports(&content),
         "py" => extract_python_imports(&content),
         "go" => extract_go_imports(&content),
         _ => None,
@@ -79,7 +71,8 @@ pub fn extract_imports(path: &Path) -> Option<FileImports> {
 // Rust import extraction
 // =============================================================================
 
-static RUST_USE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^use\s+([^;]+);").unwrap());
+static RUST_USE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^use\s+([^;]+);").expect("RUST_USE regex is invalid"));
 
 fn extract_rust_imports(content: &str) -> Option<FileImports> {
     let mut imports = FileImports::default();
@@ -148,14 +141,19 @@ fn simplify_path(path: &str) -> String {
 // TypeScript/JavaScript import extraction
 // =============================================================================
 
-static TS_IMPORT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"import\s+(?:[^'"]+\s+from\s+)?['"]([^'"]+)['"]"#).unwrap());
+static TS_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"import\s+(?:[^'"]+\s+from\s+)?['"]([^'"]+)['"]"#)
+        .expect("TS_IMPORT regex is invalid")
+});
 
-static JS_REQUIRE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap());
+static JS_REQUIRE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).expect("JS_REQUIRE regex is invalid")
+});
 
-static TS_EXPORT_FROM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]"#).unwrap());
+static TS_EXPORT_FROM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]"#)
+        .expect("TS_EXPORT_FROM regex is invalid")
+});
 
 // Node.js built-in modules
 const NODE_BUILTINS: &[&str] = &[
@@ -282,68 +280,207 @@ fn categorize_js_import(module: &str, imports: &mut FileImports) {
 // Python import extraction
 // =============================================================================
 
-static PY_IMPORT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^import\s+(\w+)").unwrap());
+static PY_IMPORT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^import\s+(\w+)").expect("PY_IMPORT regex is invalid"));
 
 static PY_FROM_IMPORT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^from\s+(\.*)(\w+)?").unwrap());
+    LazyLock::new(|| Regex::new(r"^from\s+(\.*)(\w+)?").expect("PY_FROM_IMPORT regex is invalid"));
 
-// Python standard library modules (partial list of most common)
+// Python standard library modules (comprehensive list of top-level modules)
 const PYTHON_STDLIB: &[&str] = &[
     "abc",
+    "aifc",
     "argparse",
+    "array",
     "ast",
+    "asynchat",
     "asyncio",
+    "asyncore",
+    "atexit",
+    "audioop",
     "base64",
+    "bdb",
+    "binascii",
+    "bisect",
+    "builtins",
+    "bz2",
+    "calendar",
+    "cgi",
+    "cgitb",
+    "chunk",
+    "cmath",
+    "cmd",
+    "code",
+    "codecs",
+    "codeop",
     "collections",
+    "colorsys",
+    "compileall",
+    "concurrent",
+    "configparser",
     "contextlib",
+    "contextvars",
     "copy",
+    "copyreg",
+    "cProfile",
+    "crypt",
     "csv",
+    "ctypes",
+    "curses",
     "dataclasses",
     "datetime",
+    "dbm",
     "decimal",
+    "difflib",
+    "dis",
+    "distutils",
+    "doctest",
+    "email",
+    "encodings",
     "enum",
+    "errno",
+    "faulthandler",
+    "fcntl",
+    "filecmp",
+    "fileinput",
+    "fnmatch",
+    "fractions",
+    "ftplib",
     "functools",
+    "gc",
+    "getopt",
+    "getpass",
+    "gettext",
     "glob",
+    "graphlib",
+    "grp",
+    "gzip",
     "hashlib",
     "heapq",
+    "hmac",
+    "html",
     "http",
+    "imaplib",
+    "imghdr",
     "importlib",
     "inspect",
     "io",
+    "ipaddress",
     "itertools",
     "json",
+    "keyword",
+    "linecache",
+    "locale",
     "logging",
+    "lzma",
+    "mailbox",
+    "mailcap",
+    "marshal",
     "math",
+    "mimetypes",
+    "mmap",
+    "modulefinder",
     "multiprocessing",
+    "netrc",
+    "nntplib",
+    "numbers",
     "operator",
+    "optparse",
     "os",
     "pathlib",
+    "pdb",
     "pickle",
+    "pickletools",
+    "pipes",
+    "pkgutil",
+    "platform",
+    "plistlib",
+    "poplib",
+    "posix",
     "pprint",
+    "profile",
+    "pstats",
+    "pty",
+    "pwd",
+    "pyclbr",
+    "pydoc",
     "queue",
+    "quopri",
     "random",
     "re",
+    "readline",
+    "reprlib",
+    "resource",
+    "rlcompleter",
+    "runpy",
+    "sched",
+    "secrets",
+    "select",
+    "selectors",
+    "shelve",
+    "shlex",
     "shutil",
     "signal",
+    "site",
+    "smtpd",
+    "smtplib",
+    "sndhdr",
     "socket",
+    "socketserver",
     "sqlite3",
     "ssl",
+    "stat",
+    "statistics",
     "string",
+    "stringprep",
+    "struct",
     "subprocess",
+    "sunau",
+    "symtable",
     "sys",
+    "sysconfig",
+    "syslog",
+    "tabnanny",
+    "tarfile",
+    "telnetlib",
     "tempfile",
+    "termios",
+    "textwrap",
     "threading",
     "time",
+    "timeit",
+    "tkinter",
+    "token",
+    "tokenize",
+    "tomllib",
+    "trace",
     "traceback",
+    "tracemalloc",
+    "tty",
+    "turtle",
     "types",
     "typing",
+    "unicodedata",
     "unittest",
     "urllib",
+    "uu",
     "uuid",
+    "venv",
     "warnings",
+    "wave",
     "weakref",
+    "webbrowser",
+    "winreg",
+    "winsound",
+    "wsgiref",
+    "xdrlib",
     "xml",
+    "xmlrpc",
+    "zipapp",
     "zipfile",
+    "zipimport",
+    "zlib",
+    "zoneinfo",
 ];
 
 fn extract_python_imports(content: &str) -> Option<FileImports> {
@@ -400,11 +537,13 @@ fn categorize_python_import(module: &str, _is_from: bool, imports: &mut FileImpo
 // Go import extraction
 // =============================================================================
 
-static GO_IMPORT_SINGLE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^import\s+"([^"]+)""#).unwrap());
+static GO_IMPORT_SINGLE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^import\s+"([^"]+)""#).expect("GO_IMPORT_SINGLE regex is invalid")
+});
 
-static GO_IMPORT_BLOCK_LINE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^\s*(?:\w+\s+)?"([^"]+)""#).unwrap());
+static GO_IMPORT_BLOCK_LINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^\s*(?:\w+\s+)?"([^"]+)""#).expect("GO_IMPORT_BLOCK_LINE regex is invalid")
+});
 
 fn extract_go_imports(content: &str) -> Option<FileImports> {
     let mut imports = FileImports::default();

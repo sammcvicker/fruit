@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--max-file-size` flag to configure maximum file size for metadata extraction (#76)
+  - Default remains 1MB, use suffixes like `5M`, `100K`, `1G` to customize
+  - Files larger than the limit are skipped to prevent excessive memory usage
+  - Example: `fruit --max-file-size 5M` to allow files up to 5MB
+
+### Changed
+
+- Modularized `output.rs` into separate submodules for better maintainability (#70)
+  - `output/config.rs` - Output configuration types
+  - `output/utils.rs` - Shared utility functions (text wrapping, prefix calculation)
+  - `output/tree.rs` - Buffered tree formatter
+  - `output/streaming.rs` - Streaming console formatter
+  - `output/markdown.rs` - Markdown output formatter
+  - `output/json.rs` - JSON output
+- Modularized `tree.rs` into separate submodules for better maintainability (#71)
+  - `tree/config.rs` - WalkerConfig type
+  - `tree/filter.rs` - FileFilter enum
+  - `tree/json_types.rs` - JSON serialization types (JsonTodoItem, TreeNode)
+  - `tree/walker.rs` - TreeWalker implementation
+  - `tree/streaming.rs` - StreamingWalker implementation
+  - `tree/utils.rs` - Shared utilities (glob matching, file size formatting)
+- Simplified duration parsing to use `humantime` crate directly, removing redundant custom parsing (#64)
+- Consolidated file-reading logic into shared `file_utils` module (#58, #65)
+- Aligned plain text metadata block formatting with colored output to ensure consistent group separators (#60)
+- Extended Python standard library list with comprehensive module coverage (#63)
+
+### Fixed
+
+- Go block comment extraction no longer panics on edge cases with `*/` (#67)
+- TODO marker extraction now uses `unwrap_or_else` instead of fragile `unwrap()` (#68)
+- Test code now uses `expect()` with descriptive messages instead of bare `unwrap()` (#69)
+- Regex `unwrap()` calls in lazy statics now use `expect()` with descriptive messages (#75)
+- Go block comment extraction now correctly handles multiple block comments (#74)
+- Test utilities now use descriptive panic messages with context (method name, paths, errors) (#72)
+- Added integration tests for large file handling and git edge cases (#73)
+- `MetadataBlock.total_lines()` now includes import lines in the count (#59)
+- Removed unused `repo_root` field from `GitFilter` struct (#62)
+- Removed unused `LineStyle` variants (`ClassName`, `MethodName`, `Docstring`) from metadata.rs (#57)
+
+### Added
+
 - `--newer` and `--older` flags to filter files by modification time (#50)
   - `--newer 1h` shows only files modified within the last hour
   - `--older 7d` shows only files not modified in the last 7 days

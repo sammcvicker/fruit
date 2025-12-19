@@ -114,7 +114,6 @@ impl GitignoreFilter {
 pub struct GitFilter {
     tracked_files: HashSet<PathBuf>,
     tracked_dirs: HashSet<PathBuf>,
-    repo_root: PathBuf,
 }
 
 impl GitFilter {
@@ -139,7 +138,6 @@ impl GitFilter {
         Some(Self {
             tracked_files,
             tracked_dirs,
-            repo_root,
         })
     }
 
@@ -188,10 +186,6 @@ impl GitFilter {
         }
 
         false
-    }
-
-    pub fn repo_root(&self) -> &Path {
-        &self.repo_root
     }
 }
 
