@@ -195,6 +195,116 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
+/// Write a rendered line with colors to stdout.
+/// Used by both StreamingFormatter and TreeFormatter.
+pub fn write_rendered_line(
+    stdout: &mut StandardStream,
+    line: &RenderedLine,
+    cont_prefix: &str,
+    meta_prefix: &str,
+) -> io::Result<()> {
+    match line {
+        RenderedLine::Separator => {
+            stdout.reset()?;
+            writeln!(stdout, "{}", cont_prefix)?;
+        }
+        RenderedLine::Content {
+            text,
+            symbol_name,
+            style,
+            indent,
+        } => {
+            stdout.reset()?;
+            write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
+            write_metadata_line_with_symbol(
+                stdout,
+                text,
+                symbol_name.as_deref(),
+                style.color(),
+                style.is_intense(),
+                *indent,
+            )?;
+            writeln!(stdout)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write inline content with colors (first line on same line as filename).
+/// Used by both StreamingFormatter and TreeFormatter.
+pub fn write_inline_content(
+    stdout: &mut StandardStream,
+    line: &RenderedLine,
+    meta_prefix: &str,
+) -> io::Result<()> {
+    if let RenderedLine::Content {
+        text,
+        symbol_name,
+        style,
+        indent,
+    } = line
+    {
+        write!(stdout, "  {}", meta_prefix)?;
+        write_metadata_line_with_symbol(
+            stdout,
+            text,
+            symbol_name.as_deref(),
+            style.color(),
+            style.is_intense(),
+            *indent,
+        )?;
+    }
+    writeln!(stdout)?;
+    stdout.reset()?;
+    Ok(())
+}
+
+/// Print a metadata block with colors to stdout.
+/// Used by both StreamingFormatter and TreeFormatter.
+pub fn print_metadata_block(
+    stdout: &mut StandardStream,
+    block: &MetadataBlock,
+    prefix: &str,
+    is_last: bool,
+    meta_prefix: &str,
+    order: MetadataOrder,
+    show_full: bool,
+    wrap_width: Option<usize>,
+) -> io::Result<()> {
+    let cont_prefix = continuation_prefix(prefix, is_last);
+    let wrap_calc_width = calculate_wrap_width(
+        wrap_width,
+        cont_prefix.chars().count(),
+        meta_prefix.chars().count(),
+    );
+
+    let result = render_metadata_block(block, order, show_full, wrap_calc_width);
+
+    match result {
+        MetadataRenderResult::Empty => {
+            writeln!(stdout)?;
+        }
+        MetadataRenderResult::Inline { first } => {
+            write_inline_content(stdout, &first, meta_prefix)?;
+        }
+        MetadataRenderResult::InlineWithBlock { first, block_lines } => {
+            write_inline_content(stdout, &first, meta_prefix)?;
+            for line in &block_lines {
+                write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
+            }
+            stdout.reset()?;
+        }
+        MetadataRenderResult::Block { lines } => {
+            writeln!(stdout)?; // End the filename line
+            for line in &lines {
+                write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
+            }
+            stdout.reset()?;
+        }
+    }
+    Ok(())
+}
+
 /// A rendered line from a metadata block, ready for output.
 /// This abstraction allows the same rendering logic to be used
 /// for both colored (stdout) and plain (String) output.

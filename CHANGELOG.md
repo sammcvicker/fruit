@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Deduplicated metadata rendering methods between StreamingFormatter and TreeFormatter (#112)
+  - Extracted `write_rendered_line()`, `write_inline_content()`, and `print_metadata_block()` into shared utility functions
+  - Both formatters now use the same rendering logic from `output/utils.rs`
+  - Improves maintainability: bug fixes and formatting changes only need to be made in one place
+  - Better extensibility: new formatters can reuse existing rendering utilities
 - Centralized language detection and extension mapping into `Language` enum (#109)
   - Created new `language.rs` module with `Language` enum for all supported languages
   - Removed duplicated extension-to-language mappings from `comments.rs`, `types.rs`, `imports.rs`, and `file_utils.rs`

@@ -31,7 +31,8 @@ pub use tree::TreeFormatter;
 // Re-export utility functions used by tests
 pub use utils::{
     calculate_wrap_width, continuation_prefix, first_line, has_indented_children,
-    should_insert_group_separator, wrap_text,
+    print_metadata_block, should_insert_group_separator, wrap_text, write_inline_content,
+    write_rendered_line,
 };
 
 #[cfg(test)]

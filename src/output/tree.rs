@@ -12,7 +12,7 @@ use crate::tree::TreeNode;
 use super::config::OutputConfig;
 use super::utils::{
     MetadataRenderResult, RenderedLine, calculate_wrap_width, continuation_prefix,
-    render_metadata_block, write_metadata_line_with_symbol,
+    print_metadata_block, render_metadata_block,
 };
 
 /// Formatter for buffered tree output.
@@ -98,116 +98,6 @@ impl TreeFormatter {
         let (dir_count, file_count) = self.print_node(node, &mut stdout, "", true, true)?;
         writeln!(stdout)?;
         writeln!(stdout, "{} directories, {} files", dir_count, file_count)?;
-        Ok(())
-    }
-
-    /// Write a rendered line with colors to stdout.
-    fn write_rendered_line(
-        &self,
-        stdout: &mut StandardStream,
-        line: &RenderedLine,
-        cont_prefix: &str,
-        meta_prefix: &str,
-    ) -> io::Result<()> {
-        match line {
-            RenderedLine::Separator => {
-                stdout.reset()?;
-                writeln!(stdout, "{}", cont_prefix)?;
-            }
-            RenderedLine::Content {
-                text,
-                symbol_name,
-                style,
-                indent,
-            } => {
-                stdout.reset()?;
-                write!(stdout, "{}{}", cont_prefix, meta_prefix)?;
-                write_metadata_line_with_symbol(
-                    stdout,
-                    text,
-                    symbol_name.as_deref(),
-                    style.color(),
-                    style.is_intense(),
-                    *indent,
-                )?;
-                writeln!(stdout)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Write inline content with colors (first line on same line as filename).
-    fn write_inline_content(
-        &self,
-        stdout: &mut StandardStream,
-        line: &RenderedLine,
-        meta_prefix: &str,
-    ) -> io::Result<()> {
-        if let RenderedLine::Content {
-            text,
-            symbol_name,
-            style,
-            indent,
-        } = line
-        {
-            write!(stdout, "  {}", meta_prefix)?;
-            write_metadata_line_with_symbol(
-                stdout,
-                text,
-                symbol_name.as_deref(),
-                style.color(),
-                style.is_intense(),
-                *indent,
-            )?;
-        }
-        writeln!(stdout)?;
-        stdout.reset()?;
-        Ok(())
-    }
-
-    /// Print a metadata block with colors to stdout.
-    fn print_metadata_block(
-        &self,
-        stdout: &mut StandardStream,
-        block: &MetadataBlock,
-        prefix: &str,
-        is_last: bool,
-    ) -> io::Result<()> {
-        let meta_prefix = self.config.metadata.prefix_str();
-        let order = self.config.metadata.order;
-        let show_full = self.config.show_full();
-
-        let cont_prefix = continuation_prefix(prefix, is_last);
-        let wrap_width = calculate_wrap_width(
-            self.config.wrap_width,
-            cont_prefix.chars().count(),
-            meta_prefix.chars().count(),
-        );
-
-        let result = render_metadata_block(block, order, show_full, wrap_width);
-
-        match result {
-            MetadataRenderResult::Empty => {
-                writeln!(stdout)?;
-            }
-            MetadataRenderResult::Inline { first } => {
-                self.write_inline_content(stdout, &first, meta_prefix)?;
-            }
-            MetadataRenderResult::InlineWithBlock { first, block_lines } => {
-                self.write_inline_content(stdout, &first, meta_prefix)?;
-                for line in &block_lines {
-                    self.write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
-                }
-                stdout.reset()?;
-            }
-            MetadataRenderResult::Block { lines } => {
-                writeln!(stdout)?; // End the filename line
-                for line in &lines {
-                    self.write_rendered_line(stdout, line, &cont_prefix, meta_prefix)?;
-                }
-                stdout.reset()?;
-            }
-        }
         Ok(())
     }
 
@@ -391,7 +281,16 @@ impl TreeFormatter {
                     todos.as_ref(),
                     imports.as_ref(),
                 ) {
-                    self.print_metadata_block(stdout, &block, prefix, is_last)?;
+                    print_metadata_block(
+                        stdout,
+                        &block,
+                        prefix,
+                        is_last,
+                        self.config.metadata.prefix_str(),
+                        self.config.metadata.order,
+                        self.config.show_full(),
+                        self.config.wrap_width,
+                    )?;
                 } else {
                     writeln!(stdout)?;
                 }
