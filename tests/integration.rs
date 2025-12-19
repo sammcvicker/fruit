@@ -567,7 +567,8 @@ fn test_markdown_todos_only() {
     repo.add_file("has_todo.rs", "// TODO: fix this\nfn foo() {}");
     repo.add_file("no_todo.rs", "// Regular comment\nfn bar() {}");
 
-    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--markdown", "--todos", "--todos-only"]);
+    let (stdout, _stderr, success) =
+        run_fruit(repo.path(), &["--markdown", "--todos", "--todos-only"]);
     assert!(success);
 
     // Should show file with TODO
@@ -593,6 +594,57 @@ fn test_markdown_todos_only() {
     assert!(
         stdout.contains("*0 directories, 1 files*"),
         "should show 1 file: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_uppercase_extension_comment_extraction() {
+    let repo = TestRepo::with_git();
+    repo.add_file("MAIN.RS", "//! Uppercase extension\nfn main() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success);
+    assert!(
+        stdout.contains("Uppercase extension"),
+        "should extract comment from uppercase extension file: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_mixed_case_extensions() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "Script.Py",
+        r#""""Mixed case Python file."""
+def main():
+    pass
+"#,
+    );
+    repo.add_file("Main.Rs", "//! Mixed case Rust file\nfn main() {}");
+    repo.add_file(
+        "app.JS",
+        "/** Mixed case JavaScript file */\nfunction main() {}",
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &[]);
+    assert!(success);
+
+    // All files should be recognized and comments extracted
+    assert!(
+        stdout.contains("Mixed case Python file"),
+        "should extract comment from .Py file: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Mixed case Rust file"),
+        "should extract comment from .Rs file: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Mixed case JavaScript file"),
+        "should extract comment from .JS file: {}",
         stdout
     );
 }
