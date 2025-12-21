@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Further consolidated comment extraction patterns by introducing multi-prefix helper (#144)
+  - Added `extract_multi_prefix_line_comments()` helper for languages with multiple comment prefixes
+  - Refactored Ruby, Shell, and PHP extractors to use new helper, eliminating ~50 lines of duplicate code
+  - Improved consistency in handling magic comments, shebangs, and attributes
+  - No functional changes, all existing tests pass
 - Replaced stringly-typed TodoItem.marker_type with MarkerType enum (#142)
   - Added `MarkerType` enum with variants: Todo, Fixme, Hack, Xxx, Bug, Note
   - Provides type safety and exhaustive pattern matching for TODO markers

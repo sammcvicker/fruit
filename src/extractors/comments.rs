@@ -75,7 +75,7 @@ where
             line
         })
         .filter(|l| !l.is_empty() && *l != "/")
-        .filter(|l| filter_fn.as_ref().map_or(true, |f| f(l)))
+        .filter(|l| filter_fn.as_ref().is_none_or(|f| f(l)))
         .collect();
 
     if cleaned.is_empty() {
@@ -119,9 +119,78 @@ where
         if trimmed.starts_with(prefix) {
             started = true;
             let comment = trimmed.strip_prefix(prefix).unwrap_or("").trim();
-            if filter_fn.as_ref().map_or(true, |f| f(comment)) {
+            if filter_fn.as_ref().is_none_or(|f| f(comment)) {
                 comment_lines.push(comment);
             }
+        } else if trimmed.is_empty() {
+            if stop_at_empty && started && !comment_lines.is_empty() {
+                break;
+            }
+            if !skip_empty {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
+        Some(comment_lines.join("\n"))
+    } else {
+        None
+    }
+}
+
+/// Helper function to extract line comments with multi-prefix support.
+///
+/// Similar to `extract_line_comments`, but supports multiple comment prefixes
+/// (e.g., both "//" and "#" for PHP). Also allows filtering specific lines
+/// (e.g., skipping attributes like `#[...]`).
+///
+/// # Arguments
+/// * `lines` - Iterator of lines to process
+/// * `prefixes` - Slice of acceptable line comment prefixes
+/// * `skip_empty` - Whether to skip empty lines while collecting
+/// * `stop_at_empty` - Whether to stop at the first empty line after collecting starts
+/// * `skip_fn` - Optional function to skip lines (returns true to skip the line)
+///
+/// # Returns
+/// `Some(String)` if non-empty comments are found, `None` otherwise
+fn extract_multi_prefix_line_comments<'a, I, F>(
+    lines: I,
+    prefixes: &[&str],
+    skip_empty: bool,
+    stop_at_empty: bool,
+    skip_fn: Option<F>,
+) -> Option<String>
+where
+    I: IntoIterator<Item = &'a str>,
+    F: Fn(&str) -> bool,
+{
+    let mut comment_lines = Vec::new();
+    let mut started = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+
+        // Check if line should be skipped entirely
+        if skip_fn.as_ref().is_some_and(|f| f(trimmed)) {
+            continue;
+        }
+
+        // Check if line starts with any of the prefixes
+        let mut found_prefix = None;
+        for &prefix in prefixes {
+            if trimmed.starts_with(prefix) {
+                found_prefix = Some(prefix);
+                break;
+            }
+        }
+
+        if let Some(prefix) = found_prefix {
+            started = true;
+            let comment = trimmed.strip_prefix(prefix).unwrap_or("").trim();
+            comment_lines.push(comment);
         } else if trimmed.is_empty() {
             if stop_at_empty && started && !comment_lines.is_empty() {
                 break;
@@ -360,42 +429,20 @@ fn extract_c_comment(content: &str) -> Option<String> {
 ///
 /// Stops collecting at the first empty line after comments start.
 fn extract_ruby_comment(content: &str) -> Option<String> {
-    // Ruby has unique requirements: skip magic comments and stop at empty line
-    // Manual implementation needed
-    let mut comment_lines = Vec::new();
-    let mut past_preamble = false;
+    let skip_ruby_magic = |line: &str| {
+        line.starts_with("#!")
+            || line.starts_with("# frozen_string_literal")
+            || line.starts_with("# encoding:")
+            || line.starts_with("# coding:")
+    };
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        // Skip shebang
-        if trimmed.starts_with("#!") {
-            continue;
-        }
-        // Skip encoding/frozen string magic comments
-        if trimmed.starts_with("# frozen_string_literal")
-            || trimmed.starts_with("# encoding:")
-            || trimmed.starts_with("# coding:")
-        {
-            continue;
-        }
-        if trimmed.starts_with('#') {
-            past_preamble = true;
-            let comment = trimmed.strip_prefix('#').unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if trimmed.is_empty() {
-            if past_preamble && !comment_lines.is_empty() {
-                // Empty line after comments - stop collecting
-                break;
-            }
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-    None
+    extract_multi_prefix_line_comments(
+        content.lines(),
+        &["#"],
+        true, // skip_empty
+        true, // stop_at_empty
+        Some(skip_ruby_magic),
+    )
 }
 
 /// Extract shell script comments (bash, sh, zsh).
@@ -404,35 +451,15 @@ fn extract_ruby_comment(content: &str) -> Option<String> {
 /// subsequent `#` comments. Stops at the first empty line after
 /// comments start.
 fn extract_shell_comment(content: &str) -> Option<String> {
-    // Shell comments have unique requirements (skip shebang, stop at empty)
-    // so we keep the manual implementation
-    let mut comment_lines = Vec::new();
-    let mut past_shebang = false;
+    let skip_shebang = |line: &str| line.starts_with("#!");
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        // Skip shebang
-        if trimmed.starts_with("#!") {
-            continue;
-        }
-        if trimmed.starts_with('#') {
-            past_shebang = true;
-            let comment = trimmed.strip_prefix('#').unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if trimmed.is_empty() {
-            if past_shebang && !comment_lines.is_empty() {
-                // Empty line after comments - stop collecting
-                break;
-            }
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-    None
+    extract_multi_prefix_line_comments(
+        content.lines(),
+        &["#"],
+        true, // skip_empty
+        true, // stop_at_empty
+        Some(skip_shebang),
+    )
 }
 
 /// Extract JavaDoc-style comments (Java, Kotlin, Swift).
@@ -482,28 +509,15 @@ fn extract_php_comment(content: &str) -> Option<String> {
         return Some(comment);
     }
 
-    // PHP supports both // and # for line comments
-    // Need to handle manually due to dual-prefix support and attribute filtering
-    let mut comment_lines = Vec::new();
-    for line in content.lines() {
-        let t = line.trim();
-        if t.starts_with("//") {
-            let comment = t.strip_prefix("//").unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if t.starts_with('#') && !t.starts_with("#[") {
-            let comment = t.strip_prefix('#').unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if t.is_empty() {
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-
-    None
+    // PHP supports both // and # for line comments, but skip #[attributes]
+    let skip_attributes = |line: &str| line.starts_with("#[");
+    extract_multi_prefix_line_comments(
+        content.lines(),
+        &["//", "#"],
+        true,  // skip_empty
+        false, // stop_at_empty
+        Some(skip_attributes),
+    )
 }
 
 /// Extract C# comments.
@@ -515,24 +529,35 @@ fn extract_php_comment(content: &str) -> Option<String> {
 ///
 /// Skips `using` statements and `[Attribute]` lines when looking for comments.
 fn extract_csharp_comment(content: &str) -> Option<String> {
-    // C# has complex requirements: /// with XML filtering, //, and /* */
-    // Manual implementation needed due to dual-prefix support (/// and //)
     let trimmed = content.trim_start();
 
+    // Skip using statements and attributes, filter XML tags from /// comments
+    let skip_line = |line: &str| line.starts_with("using ") || line.starts_with("[");
+
+    // For /// comments, we need to filter XML tags. We'll use a custom filter.
+    // The multi-prefix helper processes the comment content after stripping the prefix.
+    // We need to filter out lines that are just XML tags.
+    let filter_xml_tags = |comment: &str| !comment.starts_with('<') && !comment.ends_with('>');
+
+    // Try line comments first (both /// and //)
+    // Unfortunately, we need different filtering for /// vs //, so we still need manual implementation
     let mut doc_lines = Vec::new();
     for line in trimmed.lines() {
         let t = line.trim();
+
+        if skip_line(t) {
+            continue;
+        }
+
         if t.starts_with("///") {
             let comment = t.strip_prefix("///").unwrap_or("").trim();
-            // Skip XML tags like <summary>, </summary>, <param>, etc.
-            if !comment.starts_with('<') && !comment.ends_with('>') {
+            if filter_xml_tags(comment) {
                 doc_lines.push(comment);
             }
         } else if t.starts_with("//") {
-            // Regular comment
             let comment = t.strip_prefix("//").unwrap_or("").trim();
             doc_lines.push(comment);
-        } else if t.is_empty() || t.starts_with("using ") || t.starts_with("[") {
+        } else if t.is_empty() {
             continue;
         } else {
             break;
