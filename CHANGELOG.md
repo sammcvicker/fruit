@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Organized help text into logical groups for better discoverability (#123)
+  - Flags are now grouped by purpose: Tree Display, Metadata Extraction, Filtering, Output Format, Performance, Statistics
+  - Makes `--help` output easier to scan and understand feature relationships
+  - No behavior changes, only improved CLI documentation
 - **BREAKING**: Metadata flags are now additive and independent (#119)
   - `-t` (types) now ADDS type information without hiding comments (previously showed only types)
   - `--todos` now ADDS TODO markers without hiding comments (previously showed only TODOs when used alone)

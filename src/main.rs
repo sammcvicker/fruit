@@ -58,114 +58,114 @@ struct Args {
     path: PathBuf,
 
     /// Show all files (ignore .gitignore filtering)
-    #[arg(short, long)]
+    #[arg(short, long, help_heading = "Tree Display")]
     all: bool,
 
     /// Descend only N levels deep
-    #[arg(short = 'L', long = "level")]
+    #[arg(short = 'L', long = "level", help_heading = "Tree Display")]
     level: Option<usize>,
 
     /// List directories only
-    #[arg(short = 'd', long = "dirs-only")]
+    #[arg(short = 'd', long = "dirs-only", help_heading = "Tree Display")]
     dirs_only: bool,
 
     /// Show full comment, not just first line
-    #[arg(short = 'f', long = "full-comment")]
+    #[arg(short = 'f', long = "full-comment", help_heading = "Metadata Extraction")]
     full_comment: bool,
 
     /// Ignore files matching pattern (can be used multiple times)
-    #[arg(short = 'I', long = "ignore")]
+    #[arg(short = 'I', long = "ignore", help_heading = "Filtering")]
     ignore: Vec<String>,
 
     /// Control color output: auto, always, never
-    #[arg(long = "color", value_name = "WHEN", default_value = "auto")]
+    #[arg(long = "color", value_name = "WHEN", default_value = "auto", help_heading = "Output Format")]
     color: ColorMode,
 
     /// Show file comments (enabled by default, use --no-comments to disable)
-    #[arg(short = 'c', long = "comments")]
+    #[arg(short = 'c', long = "comments", help_heading = "Metadata Extraction")]
     comments: bool,
 
     /// Disable comment extraction
-    #[arg(long = "no-comments", conflicts_with = "comments")]
+    #[arg(long = "no-comments", conflicts_with = "comments", help_heading = "Metadata Extraction")]
     no_comments: bool,
 
     /// Show exported type signatures (functions, classes, interfaces, etc.)
     /// Adds type information to output (enables full output mode)
-    #[arg(short = 't', long = "types")]
+    #[arg(short = 't', long = "types", help_heading = "Metadata Extraction")]
     types: bool,
 
     /// Disable type extraction
-    #[arg(long = "no-types", conflicts_with = "types")]
+    #[arg(long = "no-types", conflicts_with = "types", help_heading = "Metadata Extraction")]
     no_types: bool,
 
     /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
     /// Adds task markers to output beneath file entries
-    #[arg(long = "todos")]
+    #[arg(long = "todos", help_heading = "Metadata Extraction")]
     todos: bool,
 
     /// Disable TODO marker extraction
-    #[arg(long = "no-todos", conflicts_with = "todos")]
+    #[arg(long = "no-todos", conflicts_with = "todos", help_heading = "Metadata Extraction")]
     no_todos: bool,
 
     /// Show only files containing TODO/FIXME markers (implies --todos)
-    #[arg(long = "todos-only")]
+    #[arg(long = "todos-only", help_heading = "Metadata Extraction")]
     todos_only: bool,
 
     /// Show import/dependency statements from source files (enables full output mode)
     /// Extracts and categorizes imports (external, std, internal)
-    #[arg(short = 'i', long = "imports")]
+    #[arg(short = 'i', long = "imports", help_heading = "Metadata Extraction")]
     imports: bool,
 
     /// Disable import extraction
-    #[arg(long = "no-imports", conflicts_with = "imports")]
+    #[arg(long = "no-imports", conflicts_with = "imports", help_heading = "Metadata Extraction")]
     no_imports: bool,
 
     /// Wrap comments at column width (default: 100, 0 to disable)
-    #[arg(short = 'w', long = "wrap", default_value = "100")]
+    #[arg(short = 'w', long = "wrap", default_value = "100", help_heading = "Output Format")]
     wrap: usize,
 
     /// Output in JSON format
-    #[arg(long = "json", conflicts_with = "markdown")]
+    #[arg(long = "json", conflicts_with = "markdown", help_heading = "Output Format")]
     json: bool,
 
     /// Output in Markdown format (suitable for documentation and LLM context)
-    #[arg(long = "markdown", short = 'm', conflicts_with = "json")]
+    #[arg(long = "markdown", short = 'm', conflicts_with = "json", help_heading = "Output Format")]
     markdown: bool,
 
     /// Prefix for metadata lines (e.g., "# " or "// ")
-    #[arg(short = 'p', long = "prefix")]
+    #[arg(short = 'p', long = "prefix", help_heading = "Output Format")]
     prefix: Option<String>,
 
     /// Number of parallel workers for metadata extraction
     /// (0 = auto-detect, 1 = sequential, N = use N workers)
-    #[arg(short = 'j', long = "jobs", default_value = "0")]
+    #[arg(short = 'j', long = "jobs", default_value = "0", help_heading = "Performance")]
     jobs: usize,
 
     /// Show codebase statistics (file counts, language breakdown, line counts)
-    #[arg(long = "stats")]
+    #[arg(long = "stats", help_heading = "Statistics")]
     stats: bool,
 
     /// Skip line counting when showing stats (faster)
-    #[arg(long = "no-lines", requires = "stats")]
+    #[arg(long = "no-lines", requires = "stats", help_heading = "Statistics")]
     no_lines: bool,
 
     /// Show file sizes next to filenames
-    #[arg(short = 's', long = "size")]
+    #[arg(short = 's', long = "size", help_heading = "Tree Display")]
     size: bool,
 
     /// Show only files modified within the last DURATION (e.g., 7d for last week)
     /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
-    #[arg(long = "newer", value_name = "DURATION")]
+    #[arg(long = "newer", value_name = "DURATION", help_heading = "Filtering")]
     newer: Option<String>,
 
     /// Show only files not modified in the last DURATION (e.g., 30d for older than a month)
     /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
-    #[arg(long = "older", value_name = "DURATION")]
+    #[arg(long = "older", value_name = "DURATION", help_heading = "Filtering")]
     older: Option<String>,
 
     /// Maximum file size for comment/type extraction (default: 1MB)
     /// Files larger than this are skipped. Use suffixes: K, M, G (e.g., 5M for 5MB)
-    #[arg(long = "max-file-size", value_name = "SIZE")]
+    #[arg(long = "max-file-size", value_name = "SIZE", help_heading = "Performance")]
     max_file_size: Option<String>,
 }
 
