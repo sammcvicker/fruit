@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Reduced unnecessary string allocations throughout the codebase (#136)
+  - Changed `TypeSignature::new()` to accept `impl Into<String>` for both parameters
+  - Eliminated 27+ `.to_string()` calls in type extraction
+  - Changed `simplify_path()` to return `&str` instead of `String` in imports
+  - Optimized `clean_comment_text()` to avoid intermediate allocations
+  - Simplified Go import package key handling to reduce allocations
+  - Fixed `MetadataLine::new()` call sites to avoid unnecessary `.to_string()` on `&str` inputs
+  - Improves performance especially for large codebases with many type signatures
+
 ### Changed
 
 - **Unified extractor module architecture** (#135)

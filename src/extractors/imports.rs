@@ -161,10 +161,10 @@ fn categorize_rust_import(path: &str, builder: &mut ImportsBuilder) {
 const RUST_PATH_PREFIXES: &[&str] = &["std::", "core::", "alloc::", "crate::", "self::"];
 
 /// Simplify a Rust path for display (e.g., std::path::Path -> path::Path)
-fn simplify_path(path: &str) -> String {
+fn simplify_path(path: &str) -> &str {
     // For std/core/alloc/crate/self, remove the prefix
     // Keep super:: and other prefixes for clarity
-    strip_any_prefix(path, RUST_PATH_PREFIXES).to_string()
+    strip_any_prefix(path, RUST_PATH_PREFIXES)
 }
 
 // =============================================================================
@@ -622,12 +622,11 @@ fn categorize_go_import(pkg: &str, builder: &mut ImportsBuilder) {
         // Get the main package identifier (e.g., github.com/user/repo -> github.com/user/repo)
         // Take up to the third segment for typical Go module paths
         let parts: Vec<&str> = pkg.split('/').collect();
-        let key = if parts.len() >= 3 {
-            parts[..3].join("/")
+        if parts.len() >= 3 {
+            builder.add_external(parts[..3].join("/"));
         } else {
-            pkg.to_string()
-        };
-        builder.add_external(key);
+            builder.add_external(pkg);
+        }
     }
 }
 

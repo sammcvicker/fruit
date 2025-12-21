@@ -40,7 +40,7 @@ impl TreeFormatter {
         if let Some(c) = comment {
             block.comment_lines = c
                 .lines()
-                .map(|line| MetadataLine::new(line.to_string()))
+                .map(|line| MetadataLine::new(line))
                 .collect();
         }
 

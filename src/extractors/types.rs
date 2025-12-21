@@ -28,10 +28,10 @@ pub struct TypeSignature {
 
 impl TypeSignature {
     /// Create a new type signature.
-    pub fn new(signature: String, symbol_name: String, indent: usize) -> Self {
+    pub fn new(signature: impl Into<String>, symbol_name: impl Into<String>, indent: usize) -> Self {
         Self {
-            signature,
-            symbol_name,
+            signature: signature.into(),
+            symbol_name: symbol_name.into(),
             indent,
         }
     }
@@ -139,7 +139,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
             // impl Type
             if let (Some(full), Some(type_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, type_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, type_match.as_str(), indent));
                 in_impl_block = true;
                 impl_indent = indent;
             }
@@ -151,7 +151,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
             {
                 if let (Some(full), Some(fn_name)) = (caps.get(0), caps.get(3)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, fn_name.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, fn_name.as_str(), indent));
                 }
             }
         } else {
@@ -161,32 +161,32 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
             if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 }
             }
         }
@@ -235,32 +235,32 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<TypeSignature>> {
         if let Some(caps) = TS_EXPORT_FUNCTION.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_INTERFACE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_TYPE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_CONST.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_ENUM.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         }
     }
@@ -297,18 +297,18 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<TypeSignature>> {
         if let Some(caps) = JS_EXPORT_FUNCTION.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = JS_EXPORT_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = JS_EXPORT_CONST.captures(trimmed) {
             // For const, just show the declaration without the value
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = full.as_str().trim_end_matches('=').trim();
-                signatures.push(TypeSignature::new(sig.to_string(), sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         }
     }
@@ -372,31 +372,31 @@ fn extract_python_signatures(content: &str) -> Option<Vec<TypeSignature>> {
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_ASYNC_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
                 matched = true;
             }
         }
@@ -461,27 +461,27 @@ fn extract_go_signatures(content: &str) -> Option<Vec<TypeSignature>> {
         if let Some(caps) = GO_EXPORTED_METHOD.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_FUNC.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_TYPE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_CONST.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = full.as_str().trim_end_matches('=').trim();
-                signatures.push(TypeSignature::new(sig.to_string(), sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_VAR.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str(), indent));
             }
         }
     }

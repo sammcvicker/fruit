@@ -584,7 +584,7 @@ fn extract_metadata_from_path(
         if let Some(comment) = extract_first_comment(path) {
             block.comment_lines = comment
                 .lines()
-                .map(|line| MetadataLine::new(line.to_string()))
+                .map(|line| MetadataLine::new(line))
                 .collect();
         }
     }

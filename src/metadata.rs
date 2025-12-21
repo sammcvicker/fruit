@@ -111,7 +111,7 @@ impl MetadataBlock {
     pub fn from_comments(text: &str) -> Self {
         let comment_lines = text
             .lines()
-            .map(|line| MetadataLine::new(line.to_string()))
+            .map(|line| MetadataLine::new(line))
             .collect();
         Self {
             comment_lines,

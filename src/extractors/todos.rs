@@ -147,19 +147,19 @@ fn looks_like_comment(line: &str) -> bool {
 
 /// Clean up TODO text by removing trailing comment markers.
 fn clean_comment_text(text: &str) -> String {
-    let mut result = text.to_string();
+    let mut text = text;
 
     // Remove trailing */ and similar
-    if let Some(idx) = result.find("*/") {
-        result = result[..idx].trim().to_string();
+    if let Some(idx) = text.find("*/") {
+        text = &text[..idx];
     }
 
     // Remove trailing --> (XML comments)
-    if let Some(idx) = result.find("-->") {
-        result = result[..idx].trim().to_string();
+    if let Some(idx) = text.find("-->") {
+        text = &text[..idx];
     }
 
-    result.trim().to_string()
+    text.trim().to_string()
 }
 
 /// TODO extractor that implements the Extractor trait.
