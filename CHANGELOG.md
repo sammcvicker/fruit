@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Users no longer need to specify both `--todos` and `--todos-only`
   - Old syntax `--todos --todos-only` still works for backward compatibility
   - New simpler syntax: just use `--todos-only`
+- Improved clarity of `--newer` and `--older` flag help text (#122)
+  - Replaced awkward phrasing "more recently than DURATION ago" with clearer "within the last DURATION"
+  - Added examples in help text: "e.g., 7d for last week" and "e.g., 30d for older than a month"
+  - No behavior changes, only improved documentation for better user experience
 - Documented implicit full mode behavior in help text for `-t`, `--todos`, and `-i` flags (#118)
   - These flags now clearly state "(enables full output mode)" in their help descriptions
   - Users can now understand why output changes when using these metadata flags

@@ -153,12 +153,12 @@ struct Args {
     #[arg(short = 's', long = "size")]
     size: bool,
 
-    /// Only show files modified more recently than DURATION ago
+    /// Show only files modified within the last DURATION (e.g., 7d for last week)
     /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
     #[arg(long = "newer", value_name = "DURATION")]
     newer: Option<String>,
 
-    /// Only show files modified longer than DURATION ago
+    /// Show only files not modified in the last DURATION (e.g., 30d for older than a month)
     /// Duration format: 30s, 5m, 1h, 7d, 2w, 3M, 1y
     #[arg(long = "older", value_name = "DURATION")]
     older: Option<String>,
