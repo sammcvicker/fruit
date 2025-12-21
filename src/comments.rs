@@ -30,6 +30,115 @@ use std::path::Path;
 use crate::file_utils::read_source_file;
 use crate::language::Language;
 
+/// Helper function to extract block comments.
+///
+/// Extracts a block comment starting with `start_marker` and ending with `end_marker`.
+/// Optionally strips prefixes like `*` from each line.
+///
+/// # Arguments
+/// * `content` - The source code content
+/// * `start_marker` - The opening comment marker (e.g., `"/*"`, `"/**"`)
+/// * `end_marker` - The closing comment marker (e.g., `"*/"`)
+/// * `strip_prefix` - Optional character to strip from line starts (e.g., `'*'`)
+/// * `filter_fn` - Optional function to filter lines (e.g., skip lines starting with '@')
+///
+/// # Returns
+/// `Some(String)` if a valid block comment is found, `None` otherwise
+fn extract_block_comment<F>(
+    content: &str,
+    start_marker: &str,
+    end_marker: &str,
+    strip_prefix: Option<char>,
+    filter_fn: Option<F>,
+) -> Option<String>
+where
+    F: Fn(&str) -> bool,
+{
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with(start_marker) {
+        return None;
+    }
+
+    let after_start = &trimmed[start_marker.len()..];
+    let end = after_start.find(end_marker)?;
+    let block = &after_start[..end];
+
+    let cleaned: Vec<&str> = block
+        .lines()
+        .map(|l| {
+            let mut line = l.trim();
+            if let Some(prefix_char) = strip_prefix {
+                line = line.trim_start_matches(prefix_char).trim();
+            }
+            line
+        })
+        .filter(|l| !l.is_empty() && *l != "/")
+        .filter(|l| filter_fn.as_ref().map_or(true, |f| f(l)))
+        .collect();
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned.join("\n"))
+    }
+}
+
+/// Helper function to extract consecutive line comments.
+///
+/// Collects consecutive lines starting with the given prefix,
+/// stopping at the first non-comment, non-empty line.
+///
+/// # Arguments
+/// * `lines` - Iterator of lines to process
+/// * `prefix` - The line comment prefix (e.g., `"//"`, `"#"`)
+/// * `skip_empty` - Whether to skip empty lines while collecting
+/// * `stop_at_empty` - Whether to stop at the first empty line after collecting starts
+/// * `filter_fn` - Optional function to filter lines (returns true to keep the line)
+///
+/// # Returns
+/// `Some(String)` if non-empty comments are found, `None` otherwise
+fn extract_line_comments<'a, I, F>(
+    lines: I,
+    prefix: &str,
+    skip_empty: bool,
+    stop_at_empty: bool,
+    filter_fn: Option<F>,
+) -> Option<String>
+where
+    I: IntoIterator<Item = &'a str>,
+    F: Fn(&str) -> bool,
+{
+    let mut comment_lines = Vec::new();
+    let mut started = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with(prefix) {
+            started = true;
+            let comment = trimmed.strip_prefix(prefix).unwrap_or("").trim();
+            if filter_fn.as_ref().map_or(true, |f| f(comment)) {
+                comment_lines.push(comment);
+            }
+        } else if trimmed.is_empty() {
+            if stop_at_empty && started && !comment_lines.is_empty() {
+                break;
+            }
+            if !skip_empty {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
+        Some(comment_lines.join("\n"))
+    } else {
+        None
+    }
+}
+
 /// Extract the first documentation comment from a source file.
 ///
 /// This function reads the file at the given path and extracts what it considers
@@ -87,6 +196,8 @@ pub fn extract_first_comment(path: &Path) -> Option<String> {
 /// 2. `///` - Outer doc comments (item documentation, skips `#[...]` attributes)
 /// 3. `/* */` - Block comments at file start
 fn extract_rust_comment(content: &str) -> Option<String> {
+    // Rust has unique requirements for //! vs /// distinction and attribute skipping
+    // Keep manual implementation for line comments
     let lines: Vec<&str> = content.lines().collect();
 
     // Look for //! module doc comments - collect all consecutive lines
@@ -126,23 +237,8 @@ fn extract_rust_comment(content: &str) -> Option<String> {
         return Some(doc_lines.join("\n"));
     }
 
-    // Look for /* */ block comments at the top
-    let trimmed = content.trim_start();
-    if trimmed.starts_with("/*") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[2..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                .filter(|l| !l.is_empty())
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
-    }
-
-    None
+    // Look for /* */ block comments at the top (use helper)
+    extract_block_comment(content, "/*", "*/", Some('*'), None::<fn(&str) -> bool>)
 }
 
 /// Extract Python module docstrings.
@@ -194,41 +290,13 @@ fn extract_python_docstring(content: &str) -> Option<String> {
 /// 1. JSDoc `/** ... */` block comments
 /// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_js_comment(content: &str) -> Option<String> {
-    let trimmed = content.trim_start();
-
-    // Check for JSDoc /** ... */
-    if trimmed.starts_with("/**") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[3..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                .filter(|l| !l.is_empty() && *l != "/")
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
+    // Try JSDoc block comment first
+    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), None::<fn(&str) -> bool>) {
+        return Some(comment);
     }
 
-    // Check for // comments at the top - collect all consecutive
-    let mut comment_lines = Vec::new();
-    for line in trimmed.lines() {
-        let t = line.trim();
-        if t.starts_with("//") {
-            let comment = t.strip_prefix("//").unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if t.is_empty() {
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-
-    None
+    // Fall back to // line comments
+    extract_line_comments(content.lines(), "//", true, false, None::<fn(&str) -> bool>)
 }
 
 /// Extract Go package comments.
@@ -238,6 +306,7 @@ fn extract_js_comment(content: &str) -> Option<String> {
 /// Non-empty lines between comments and `package` reset the comment buffer.
 fn extract_go_comment(content: &str) -> Option<String> {
     // Go package comments come before the package declaration
+    // Has unique requirements: resets comment buffer on non-comment code
     let mut comment_lines: Vec<&str> = Vec::new();
 
     for line in content.lines() {
@@ -246,22 +315,8 @@ fn extract_go_comment(content: &str) -> Option<String> {
             let comment = trimmed.strip_prefix("//").unwrap_or("").trim();
             comment_lines.push(comment);
         } else if trimmed.starts_with("/*") {
-            // Block comment - find matching pair from the start of this line
-            // This handles multiple block comments correctly
-            if let Some(start_idx) = content.find("/*") {
-                if let Some(relative_end) = content[start_idx + 2..].find("*/") {
-                    let block = &content[start_idx + 2..start_idx + 2 + relative_end];
-                    let cleaned: Vec<&str> = block
-                        .lines()
-                        .map(|l| l.trim().trim_start_matches('*').trim())
-                        .filter(|l| !l.is_empty())
-                        .collect();
-                    if !cleaned.is_empty() {
-                        return Some(cleaned.join("\n"));
-                    }
-                }
-            }
-            break;
+            // Block comment - use helper for extraction
+            return extract_block_comment(content, "/*", "*/", Some('*'), None::<fn(&str) -> bool>);
         } else if trimmed.starts_with("package ") {
             break;
         } else if !trimmed.is_empty() {
@@ -281,41 +336,13 @@ fn extract_go_comment(content: &str) -> Option<String> {
 /// 1. `/* */` block comments at file start
 /// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_c_comment(content: &str) -> Option<String> {
-    let trimmed = content.trim_start();
-
-    // Block comment /* */
-    if trimmed.starts_with("/*") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[2..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                .filter(|l| !l.is_empty())
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
+    // Try block comment first
+    if let Some(comment) = extract_block_comment(content, "/*", "*/", Some('*'), None::<fn(&str) -> bool>) {
+        return Some(comment);
     }
 
-    // Line comments //
-    let mut comment_lines = Vec::new();
-    for line in trimmed.lines() {
-        let t = line.trim();
-        if t.starts_with("//") {
-            let comment = t.strip_prefix("//").unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if t.is_empty() {
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-
-    None
+    // Fall back to // line comments
+    extract_line_comments(content.lines(), "//", true, false, None::<fn(&str) -> bool>)
 }
 
 /// Extract Ruby comments.
@@ -327,6 +354,8 @@ fn extract_c_comment(content: &str) -> Option<String> {
 ///
 /// Stops collecting at the first empty line after comments start.
 fn extract_ruby_comment(content: &str) -> Option<String> {
+    // Ruby has unique requirements: skip magic comments and stop at empty line
+    // Manual implementation needed
     let mut comment_lines = Vec::new();
     let mut past_preamble = false;
 
@@ -369,6 +398,8 @@ fn extract_ruby_comment(content: &str) -> Option<String> {
 /// subsequent `#` comments. Stops at the first empty line after
 /// comments start.
 fn extract_shell_comment(content: &str) -> Option<String> {
+    // Shell comments have unique requirements (skip shebang, stop at empty)
+    // so we keep the manual implementation
     let mut comment_lines = Vec::new();
     let mut past_shebang = false;
 
@@ -407,42 +438,14 @@ fn extract_shell_comment(content: &str) -> Option<String> {
 /// Note: Lines starting with `@` are filtered as they typically contain
 /// annotation metadata rather than documentation prose.
 fn extract_javadoc_comment(content: &str) -> Option<String> {
-    let trimmed = content.trim_start();
-
-    // Check for JavaDoc/KDoc/Swift doc /** ... */
-    if trimmed.starts_with("/**") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[3..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                // Filter out @-annotations like @param, @return, @author
-                .filter(|l| !l.is_empty() && !l.starts_with('@'))
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
+    // Try JavaDoc block comment first, filtering @ annotations
+    let filter_annotations = |line: &str| !line.starts_with('@');
+    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations)) {
+        return Some(comment);
     }
 
-    // Check for // comments at the top
-    let mut comment_lines = Vec::new();
-    for line in trimmed.lines() {
-        let t = line.trim();
-        if t.starts_with("//") {
-            let comment = t.strip_prefix("//").unwrap_or("").trim();
-            comment_lines.push(comment);
-        } else if t.is_empty() {
-            continue;
-        } else {
-            break;
-        }
-    }
-    if !comment_lines.is_empty() && comment_lines.iter().any(|l| !l.is_empty()) {
-        return Some(comment_lines.join("\n"));
-    }
-
-    None
+    // Fall back to // line comments
+    extract_line_comments(content.lines(), "//", true, false, None::<fn(&str) -> bool>)
 }
 
 /// Extract PHP comments.
@@ -465,27 +468,17 @@ fn extract_php_comment(content: &str) -> Option<String> {
     } else {
         content
     };
-    let trimmed = content.trim_start();
 
-    // Check for PHPDoc /** ... */
-    if trimmed.starts_with("/**") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[3..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                // Filter out @-annotations like @param, @return
-                .filter(|l| !l.is_empty() && !l.starts_with('@'))
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
+    // Try PHPDoc block comment first, filtering @ annotations
+    let filter_annotations = |line: &str| !line.starts_with('@');
+    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations)) {
+        return Some(comment);
     }
 
-    // Check for // or # comments at the top
+    // PHP supports both // and # for line comments
+    // Need to handle manually due to dual-prefix support and attribute filtering
     let mut comment_lines = Vec::new();
-    for line in trimmed.lines() {
+    for line in content.lines() {
         let t = line.trim();
         if t.starts_with("//") {
             let comment = t.strip_prefix("//").unwrap_or("").trim();
@@ -515,9 +508,10 @@ fn extract_php_comment(content: &str) -> Option<String> {
 ///
 /// Skips `using` statements and `[Attribute]` lines when looking for comments.
 fn extract_csharp_comment(content: &str) -> Option<String> {
+    // C# has complex requirements: /// with XML filtering, //, and /* */
+    // Manual implementation needed due to dual-prefix support (/// and //)
     let trimmed = content.trim_start();
 
-    // C# uses /// for XML doc comments
     let mut doc_lines = Vec::new();
     for line in trimmed.lines() {
         let t = line.trim();
@@ -542,21 +536,7 @@ fn extract_csharp_comment(content: &str) -> Option<String> {
     }
 
     // Also check for /* */ block comments
-    if trimmed.starts_with("/*") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[2..end];
-            let cleaned: Vec<&str> = block
-                .lines()
-                .map(|l| l.trim().trim_start_matches('*').trim())
-                .filter(|l| !l.is_empty())
-                .collect();
-            if !cleaned.is_empty() {
-                return Some(cleaned.join("\n"));
-            }
-        }
-    }
-
-    None
+    extract_block_comment(trimmed, "/*", "*/", Some('*'), None::<fn(&str) -> bool>)
 }
 
 #[cfg(test)]
