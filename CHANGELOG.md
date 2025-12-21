@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Normalized indentation between tree and markdown output formats to use consistent 4-space indents (#125)
+  - Markdown output now uses 4 spaces per level to match tree/console output
+  - Previously markdown used 2 spaces while tree used 4 spaces
+  - Provides visual consistency when comparing console vs markdown output
 - **BREAKING**: Renamed JSON field from `comment` to `comments` for consistency (#124)
   - JSON output now uses `comments` (plural) instead of `comment` (singular)
   - Aligns with other plural fields: `types`, `todos`, `imports`

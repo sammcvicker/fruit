@@ -49,9 +49,9 @@ impl StreamingOutput for MarkdownFormatter {
         size: Option<u64>,
     ) -> io::Result<()> {
         // Calculate indentation level from prefix length
-        // Each level is 2 spaces in markdown list format
+        // Each level is 4 spaces to match tree output format
         let indent_level = if is_root { 0 } else { (prefix.len() / 4) + 1 };
-        let indent = "  ".repeat(indent_level);
+        let indent = "    ".repeat(indent_level);
 
         if is_dir {
             // Directories in bold
@@ -95,7 +95,7 @@ impl StreamingOutput for MarkdownFormatter {
                         let lines = block.lines_in_order(order);
                         if lines.len() > 1 {
                             self.output.push('\n');
-                            let nested_indent = "  ".repeat(indent_level + 1);
+                            let nested_indent = "    ".repeat(indent_level + 1);
                             self.output.push_str(&nested_indent);
                             self.output.push('\n');
                             self.output.push_str(&nested_indent);
@@ -274,16 +274,16 @@ mod tests {
             "root should start with '- **': {}",
             lines[0]
         );
-        // First level: prefix is "    " (4 chars) -> indent_level = 1 + 1 = 2 -> 4 spaces
+        // First level: prefix is "    " (4 chars) -> indent_level = 1 + 1 = 2 -> 8 spaces
         assert!(
-            lines[1].starts_with("    - **"),
-            "first level dir should have 4 spaces: {}",
+            lines[1].starts_with("        - **"),
+            "first level dir should have 8 spaces: {}",
             lines[1]
         );
-        // Second level: prefix is "        " (8 chars) -> indent_level = 2 + 1 = 3 -> 6 spaces
+        // Second level: prefix is "        " (8 chars) -> indent_level = 2 + 1 = 3 -> 12 spaces
         assert!(
-            lines[2].starts_with("      - `"),
-            "second level file should have 6 spaces: {}",
+            lines[2].starts_with("            - `"),
+            "second level file should have 12 spaces: {}",
             lines[2]
         );
     }
