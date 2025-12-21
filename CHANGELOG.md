@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added negation flags for symmetric feature control (#120)
+  - `--no-types`: Explicitly disable type extraction
+  - `--no-todos`: Explicitly disable TODO marker extraction
+  - `--no-imports`: Explicitly disable import extraction
+  - Complements existing `--no-comments` flag for consistent CLI interface
+  - Enables clearer intent and future config file support
+
 ### Changed
 
 - **BREAKING**: Metadata flags are now additive and independent (#119)

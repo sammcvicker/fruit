@@ -94,10 +94,18 @@ struct Args {
     #[arg(short = 't', long = "types")]
     types: bool,
 
+    /// Disable type extraction
+    #[arg(long = "no-types", conflicts_with = "types")]
+    no_types: bool,
+
     /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
     /// Adds task markers to output beneath file entries
     #[arg(long = "todos")]
     todos: bool,
+
+    /// Disable TODO marker extraction
+    #[arg(long = "no-todos", conflicts_with = "todos")]
+    no_todos: bool,
 
     /// Show only files containing TODO/FIXME markers (requires --todos)
     #[arg(long = "todos-only", requires = "todos")]
@@ -107,6 +115,10 @@ struct Args {
     /// Extracts and categorizes imports (external, std, internal)
     #[arg(short = 'i', long = "imports")]
     imports: bool,
+
+    /// Disable import extraction
+    #[arg(long = "no-imports", conflicts_with = "imports")]
+    no_imports: bool,
 
     /// Wrap comments at column width (default: 100, 0 to disable)
     #[arg(short = 'w', long = "wrap", default_value = "100")]
@@ -233,15 +245,17 @@ fn main() {
 
     // Determine what metadata to show (all flags are additive):
     // - Comments are shown by default unless --no-comments is specified
-    // - -t adds type information to output
-    // - --todos adds TODO markers to output
+    // - -t adds type information to output (--no-types explicitly disables)
+    // - --todos adds TODO markers to output (--no-todos explicitly disables)
+    // - --imports adds import information to output (--no-imports explicitly disables)
     // - -c is a no-op but makes the default explicit
     let show_comments = !args.no_comments;
-    let show_types = args.types;
-    let show_todos = args.todos;
+    let show_types = args.types && !args.no_types;
+    let show_todos = args.todos && !args.no_todos;
+    let show_imports = args.imports && !args.no_imports;
 
     // When -t or --todos or --imports is specified, default to full mode
-    let full_mode = args.full_comment || args.types || args.todos || args.imports;
+    let full_mode = args.full_comment || show_types || show_todos || show_imports;
 
     // Parse time filters
     let newer_than = args.newer.as_ref().map(|s| {
@@ -268,7 +282,7 @@ fn main() {
         extract_types: show_types,
         extract_todos: show_todos,
         todos_only: args.todos_only,
-        extract_imports: args.imports,
+        extract_imports: show_imports,
         show_size: args.size,
         ignore_patterns: args.ignore.clone(),
         parallel_workers: args.jobs,
