@@ -81,21 +81,21 @@ struct Args {
     #[arg(long = "color", value_name = "WHEN", default_value = "auto")]
     color: ColorMode,
 
-    /// Show file comments (enabled by default unless -t is specified)
+    /// Show file comments (enabled by default, use --no-comments to disable)
     #[arg(short = 'c', long = "comments")]
     comments: bool,
 
-    /// Disable comment extraction (for backwards compatibility)
+    /// Disable comment extraction
     #[arg(long = "no-comments", conflicts_with = "comments")]
     no_comments: bool,
 
     /// Show exported type signatures (functions, classes, interfaces, etc.)
-    /// When specified alone, shows only types (enables full output mode)
+    /// Adds type information to output (enables full output mode)
     #[arg(short = 't', long = "types")]
     types: bool,
 
     /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
-    /// When specified, extracts task markers and displays them beneath file entries
+    /// Adds task markers to output beneath file entries
     #[arg(long = "todos")]
     todos: bool,
 
@@ -231,25 +231,13 @@ fn main() {
         }
     }
 
-    // Determine what metadata to show:
-    // - --no-comments: disable comments (for backwards compatibility)
-    // - If neither -c nor -t nor --todos: show comments (default behavior)
-    // - If only -t: show types only (full mode implied)
-    // - If only -c: show comments
-    // - If only --todos: show todos only
-    // - If both -c and -t: show both
-    // - Any combination with --todos: include todos
-    let (show_comments, show_types) = if args.no_comments {
-        (false, args.types)
-    } else {
-        match (args.comments, args.types, args.todos) {
-            (false, false, false) => (true, false), // default: comments only
-            (false, true, _) => (false, true),      // -t specified: types
-            (true, false, _) => (true, false),      // -c specified: comments
-            (true, true, _) => (true, true),        // both: show both
-            (false, false, true) => (false, false), // --todos alone: no comments/types
-        }
-    };
+    // Determine what metadata to show (all flags are additive):
+    // - Comments are shown by default unless --no-comments is specified
+    // - -t adds type information to output
+    // - --todos adds TODO markers to output
+    // - -c is a no-op but makes the default explicit
+    let show_comments = !args.no_comments;
+    let show_types = args.types;
     let show_todos = args.todos;
 
     // When -t or --todos or --imports is specified, default to full mode

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING**: Metadata flags are now additive and independent (#119)
+  - `-t` (types) now ADDS type information without hiding comments (previously showed only types)
+  - `--todos` now ADDS TODO markers without hiding comments (previously showed only TODOs when used alone)
+  - Default behavior unchanged: comments are still shown by default
+  - Use `--no-comments` to explicitly disable comments when using `-t` or other flags
+  - This makes flag behavior predictable and eliminates the complex interaction logic
+  - **Migration**: If you used `-t` alone expecting no comments, add `--no-comments` explicitly
 - Documented implicit full mode behavior in help text for `-t`, `--todos`, and `-i` flags (#118)
   - These flags now clearly state "(enables full output mode)" in their help descriptions
   - Users can now understand why output changes when using these metadata flags
