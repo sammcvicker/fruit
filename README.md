@@ -107,6 +107,14 @@ Options:
   -V, --version        Print version
 ```
 
+## File Ordering
+
+Files and directories within each directory are sorted **alphabetically** for deterministic, consistent output across all systems and filesystems. This ensures:
+
+- Reproducible output regardless of underlying filesystem order
+- Consistent diffs when comparing outputs
+- Predictable file locations in large directory trees
+
 ## Comparison with tree
 
 | Feature | tree | fruit |
@@ -118,6 +126,7 @@ Options:
 | Multiline comments | No | Yes (-f) |
 | Comment wrapping | No | Yes (-w) |
 | Respects .gitignore | With flag | Default |
+| Alphabetical sorting | Optional | Always |
 
 ## Supported Languages for Comments
 

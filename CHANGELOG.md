@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documented alphabetical file ordering behavior in README (#127)
+  - Files and directories are sorted alphabetically within each directory
+  - Ensures deterministic, consistent output across all systems and filesystems
+  - This behavior has been present since the initial release but was not documented
 - Normalized indentation between tree and markdown output formats to use consistent 4-space indents (#125)
   - Markdown output now uses 4 spaces per level to match tree/console output
   - Previously markdown used 2 spaces while tree used 4 spaces
