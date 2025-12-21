@@ -35,6 +35,37 @@ impl From<&crate::todos::TodoItem> for JsonTodoItem {
     }
 }
 
+/// Serializable type signature item for JSON output.
+///
+/// # Output Format Difference
+///
+/// JSON output provides structured fields (`signature`, `symbol`, `indent`) for programmatic access,
+/// allowing consumers to highlight symbols and understand code structure.
+///
+/// Console output uses the symbol field to apply syntax highlighting (bold red) to the symbol name
+/// within the full signature string.
+///
+/// This serves the needs of each format:
+/// - JSON: Machine-parseable, allowing symbol extraction, indentation-based hierarchy, etc.
+/// - Console: Human-readable with visual highlighting for quick symbol identification
+#[derive(Debug, Clone, Serialize)]
+pub struct JsonTypeItem {
+    pub signature: String,
+    pub symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indent: Option<usize>,
+}
+
+impl JsonTypeItem {
+    pub fn new(signature: String, symbol: String, indent: usize) -> Self {
+        Self {
+            signature,
+            symbol,
+            indent: if indent > 0 { Some(indent) } else { None },
+        }
+    }
+}
+
 /// TreeNode for JSON output - builds full tree in memory.
 /// For large repos, use StreamingWalker instead for console output.
 #[derive(Debug, Clone, Serialize)]
@@ -46,7 +77,7 @@ pub enum TreeNode {
         #[serde(skip_serializing_if = "Option::is_none")]
         comments: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        types: Option<Vec<String>>,
+        types: Option<Vec<JsonTypeItem>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         todos: Option<Vec<JsonTodoItem>>,
         #[serde(skip_serializing_if = "Option::is_none")]

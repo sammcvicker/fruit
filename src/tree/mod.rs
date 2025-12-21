@@ -16,7 +16,7 @@ mod walker;
 // Re-export public types
 pub use config::WalkerConfig;
 pub use filter::FileFilter;
-pub use json_types::{JsonTodoItem, TreeNode};
+pub use json_types::{JsonTodoItem, JsonTypeItem, TreeNode};
 pub use streaming::{StreamingOutput, StreamingWalker};
 pub use utils::format_size;
 pub use walker::TreeWalker;

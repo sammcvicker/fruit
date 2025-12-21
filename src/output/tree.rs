@@ -30,7 +30,7 @@ impl TreeFormatter {
     /// (comment, types, todos, imports) stored in the TreeNode.
     fn build_metadata_block(
         comment: Option<&String>,
-        types: Option<&Vec<String>>,
+        types: Option<&Vec<crate::tree::JsonTypeItem>>,
         todos: Option<&Vec<crate::tree::JsonTodoItem>>,
         imports: Option<&crate::imports::FileImports>,
     ) -> Option<MetadataBlock> {
@@ -44,11 +44,18 @@ impl TreeFormatter {
                 .collect();
         }
 
-        // Add type signature lines
-        if let Some(type_sigs) = types {
-            block.type_lines = type_sigs
+        // Add type signature lines with symbol highlighting
+        if let Some(type_items) = types {
+            block.type_lines = type_items
                 .iter()
-                .map(|sig| MetadataLine::with_style(sig.clone(), LineStyle::TypeSignature))
+                .map(|item| {
+                    MetadataLine::with_symbol(
+                        item.signature.clone(),
+                        LineStyle::TypeSignature,
+                        item.symbol.clone(),
+                        item.indent.unwrap_or(0),
+                    )
+                })
                 .collect();
         }
 
@@ -423,7 +430,7 @@ mod tests {
     #[test]
     fn test_format_with_all_metadata() {
         use crate::imports::FileImports;
-        use crate::tree::JsonTodoItem;
+        use crate::tree::{JsonTodoItem, JsonTypeItem};
 
         let tree = TreeNode::Dir {
             name: ".".to_string(),
@@ -433,8 +440,8 @@ mod tests {
                 path: PathBuf::from("app.rs"),
                 comments: Some("Main application module".to_string()),
                 types: Some(vec![
-                    "pub fn main()".to_string(),
-                    "pub struct App".to_string(),
+                    JsonTypeItem::new("pub fn main()".to_string(), "main".to_string(), 0),
+                    JsonTypeItem::new("pub struct App".to_string(), "App".to_string(), 0),
                 ]),
                 todos: Some(vec![JsonTodoItem {
                     marker_type: "TODO".to_string(),

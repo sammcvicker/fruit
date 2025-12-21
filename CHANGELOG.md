@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Type signatures now include symbol name and indentation metadata in JSON output (#128)
+  - JSON output includes `symbol` field for highlighting and `indent` field for hierarchy
+  - Console output uses symbol information for syntax highlighting (bold red symbol names)
+  - Enables JSON consumers (editors, tools) to provide rich symbol highlighting
+  - Example: `{"signature": "pub fn process(...)", "symbol": "process", "indent": 0}`
+
 ### Changed
 
 - Documented alphabetical file ordering behavior in README (#127)

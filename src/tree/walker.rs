@@ -10,7 +10,7 @@ use crate::types::extract_type_signatures;
 
 use super::config::WalkerConfig;
 use super::filter::FileFilter;
-use super::json_types::{JsonTodoItem, TreeNode};
+use super::json_types::{JsonTodoItem, JsonTypeItem, TreeNode};
 use super::utils::{get_file_size, has_included_files, should_ignore_path, should_include_path};
 
 /// Tree walker that builds the full tree in memory.
@@ -74,8 +74,11 @@ impl TreeWalker {
                 None
             };
             let types = if self.config.extract_types {
-                extract_type_signatures(path)
-                    .map(|sigs| sigs.into_iter().map(|(sig, _sym, _indent)| sig).collect())
+                extract_type_signatures(path).map(|sigs| {
+                    sigs.into_iter()
+                        .map(|(sig, sym, indent)| JsonTypeItem::new(sig, sym, indent))
+                        .collect()
+                })
             } else {
                 None
             };
