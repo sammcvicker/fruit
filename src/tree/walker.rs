@@ -105,7 +105,7 @@ impl TreeWalker {
             return Some(TreeNode::File {
                 name,
                 path: path.to_path_buf(),
-                comment,
+                comments: comment,
                 types,
                 todos,
                 imports,

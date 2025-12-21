@@ -52,7 +52,7 @@ mod tests {
         let tree = TreeNode::File {
             name: "test.rs".to_string(),
             path: PathBuf::from("test.rs"),
-            comment: Some("Single line comment".to_string()),
+            comments: Some("Single line comment".to_string()),
             types: None,
             todos: None,
             imports: None,
@@ -82,7 +82,7 @@ mod tests {
         let tree = TreeNode::File {
             name: "test.rs".to_string(),
             path: PathBuf::from("test.rs"),
-            comment: Some("First line\nSecond line\nThird line".to_string()),
+            comments: Some("First line\nSecond line\nThird line".to_string()),
             types: None,
             todos: None,
             imports: None,
@@ -115,7 +115,7 @@ mod tests {
         let tree = TreeNode::File {
             name: "test.rs".to_string(),
             path: PathBuf::from("test.rs"),
-            comment: Some("First line\nSecond line".to_string()),
+            comments: Some("First line\nSecond line".to_string()),
             types: None,
             todos: None,
             imports: None,
@@ -145,7 +145,7 @@ mod tests {
         let tree = TreeNode::File {
             name: "test.rs".to_string(),
             path: PathBuf::from("test.rs"),
-            comment: None,
+            comments: None,
             types: None,
             todos: None,
             imports: None,
@@ -184,7 +184,7 @@ mod tests {
         let tree = TreeNode::File {
             name: "test.rs".to_string(),
             path: PathBuf::from("test.rs"),
-            comment: Some("Comment".to_string()),
+            comments: Some("Comment".to_string()),
             types: None,
             todos: None,
             imports: None,

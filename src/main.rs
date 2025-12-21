@@ -70,7 +70,11 @@ struct Args {
     dirs_only: bool,
 
     /// Show full comment, not just first line
-    #[arg(short = 'f', long = "full-comment", help_heading = "Metadata Extraction")]
+    #[arg(
+        short = 'f',
+        long = "full-comment",
+        help_heading = "Metadata Extraction"
+    )]
     full_comment: bool,
 
     /// Ignore files matching pattern (can be used multiple times)
@@ -78,7 +82,12 @@ struct Args {
     ignore: Vec<String>,
 
     /// Control color output: auto, always, never
-    #[arg(long = "color", value_name = "WHEN", default_value = "auto", help_heading = "Output Format")]
+    #[arg(
+        long = "color",
+        value_name = "WHEN",
+        default_value = "auto",
+        help_heading = "Output Format"
+    )]
     color: ColorMode,
 
     /// Show file comments (enabled by default, use --no-comments to disable)
@@ -86,7 +95,11 @@ struct Args {
     comments: bool,
 
     /// Disable comment extraction
-    #[arg(long = "no-comments", conflicts_with = "comments", help_heading = "Metadata Extraction")]
+    #[arg(
+        long = "no-comments",
+        conflicts_with = "comments",
+        help_heading = "Metadata Extraction"
+    )]
     no_comments: bool,
 
     /// Show exported type signatures (functions, classes, interfaces, etc.)
@@ -95,7 +108,11 @@ struct Args {
     types: bool,
 
     /// Disable type extraction
-    #[arg(long = "no-types", conflicts_with = "types", help_heading = "Metadata Extraction")]
+    #[arg(
+        long = "no-types",
+        conflicts_with = "types",
+        help_heading = "Metadata Extraction"
+    )]
     no_types: bool,
 
     /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
@@ -104,7 +121,11 @@ struct Args {
     todos: bool,
 
     /// Disable TODO marker extraction
-    #[arg(long = "no-todos", conflicts_with = "todos", help_heading = "Metadata Extraction")]
+    #[arg(
+        long = "no-todos",
+        conflicts_with = "todos",
+        help_heading = "Metadata Extraction"
+    )]
     no_todos: bool,
 
     /// Show only files containing TODO/FIXME markers (implies --todos)
@@ -117,19 +138,37 @@ struct Args {
     imports: bool,
 
     /// Disable import extraction
-    #[arg(long = "no-imports", conflicts_with = "imports", help_heading = "Metadata Extraction")]
+    #[arg(
+        long = "no-imports",
+        conflicts_with = "imports",
+        help_heading = "Metadata Extraction"
+    )]
     no_imports: bool,
 
     /// Wrap comments at column width (default: 100, 0 to disable)
-    #[arg(short = 'w', long = "wrap", default_value = "100", help_heading = "Output Format")]
+    #[arg(
+        short = 'w',
+        long = "wrap",
+        default_value = "100",
+        help_heading = "Output Format"
+    )]
     wrap: usize,
 
     /// Output in JSON format
-    #[arg(long = "json", conflicts_with = "markdown", help_heading = "Output Format")]
+    #[arg(
+        long = "json",
+        conflicts_with = "markdown",
+        help_heading = "Output Format"
+    )]
     json: bool,
 
     /// Output in Markdown format (suitable for documentation and LLM context)
-    #[arg(long = "markdown", short = 'm', conflicts_with = "json", help_heading = "Output Format")]
+    #[arg(
+        long = "markdown",
+        short = 'm',
+        conflicts_with = "json",
+        help_heading = "Output Format"
+    )]
     markdown: bool,
 
     /// Prefix for metadata lines (e.g., "# " or "// ")
@@ -138,7 +177,12 @@ struct Args {
 
     /// Number of parallel workers for metadata extraction
     /// (0 = auto-detect, 1 = sequential, N = use N workers)
-    #[arg(short = 'j', long = "jobs", default_value = "0", help_heading = "Performance")]
+    #[arg(
+        short = 'j',
+        long = "jobs",
+        default_value = "0",
+        help_heading = "Performance"
+    )]
     jobs: usize,
 
     /// Show codebase statistics (file counts, language breakdown, line counts)
@@ -165,7 +209,11 @@ struct Args {
 
     /// Maximum file size for comment/type extraction (default: 1MB)
     /// Files larger than this are skipped. Use suffixes: K, M, G (e.g., 5M for 5MB)
-    #[arg(long = "max-file-size", value_name = "SIZE", help_heading = "Performance")]
+    #[arg(
+        long = "max-file-size",
+        value_name = "SIZE",
+        help_heading = "Performance"
+    )]
     max_file_size: Option<String>,
 }
 

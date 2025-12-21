@@ -34,7 +34,7 @@ pub enum TreeNode {
         name: String,
         path: PathBuf,
         #[serde(skip_serializing_if = "Option::is_none")]
-        comment: Option<String>,
+        comments: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         types: Option<Vec<String>>,
         #[serde(skip_serializing_if = "Option::is_none")]

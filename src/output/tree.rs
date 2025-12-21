@@ -189,7 +189,7 @@ impl TreeFormatter {
         match node {
             TreeNode::File {
                 name,
-                comment,
+                comments,
                 types,
                 todos,
                 imports,
@@ -201,7 +201,7 @@ impl TreeFormatter {
 
                 // Build metadata block from all available fields
                 if let Some(block) = Self::build_metadata_block(
-                    comment.as_ref(),
+                    comments.as_ref(),
                     types.as_ref(),
                     todos.as_ref(),
                     imports.as_ref(),
@@ -263,7 +263,7 @@ impl TreeFormatter {
         match node {
             TreeNode::File {
                 name,
-                comment,
+                comments,
                 types,
                 todos,
                 imports,
@@ -276,7 +276,7 @@ impl TreeFormatter {
 
                 // Build metadata block from all available fields
                 if let Some(block) = Self::build_metadata_block(
-                    comment.as_ref(),
+                    comments.as_ref(),
                     types.as_ref(),
                     todos.as_ref(),
                     imports.as_ref(),
@@ -353,7 +353,7 @@ mod tests {
                 TreeNode::File {
                     name: "Cargo.toml".to_string(),
                     path: PathBuf::from("Cargo.toml"),
-                    comment: Some("Package manifest".to_string()),
+                    comments: Some("Package manifest".to_string()),
                     types: None,
                     todos: None,
                     imports: None,
@@ -367,7 +367,7 @@ mod tests {
                         TreeNode::File {
                             name: "main.rs".to_string(),
                             path: PathBuf::from("src/main.rs"),
-                            comment: Some("CLI entry point".to_string()),
+                            comments: Some("CLI entry point".to_string()),
                             types: None,
                             todos: None,
                             imports: None,
@@ -377,7 +377,7 @@ mod tests {
                         TreeNode::File {
                             name: "lib.rs".to_string(),
                             path: PathBuf::from("src/lib.rs"),
-                            comment: None,
+                            comments: None,
                             types: None,
                             todos: None,
                             imports: None,
@@ -431,7 +431,7 @@ mod tests {
             children: vec![TreeNode::File {
                 name: "app.rs".to_string(),
                 path: PathBuf::from("app.rs"),
-                comment: Some("Main application module".to_string()),
+                comments: Some("Main application module".to_string()),
                 types: Some(vec![
                     "pub fn main()".to_string(),
                     "pub struct App".to_string(),

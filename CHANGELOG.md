@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: Renamed JSON field from `comment` to `comments` for consistency (#124)
+  - JSON output now uses `comments` (plural) instead of `comment` (singular)
+  - Aligns with other plural fields: `types`, `todos`, `imports`
+  - This is a breaking change for JSON consumers who parse the output
+  - Migration: Update JSON parsing code to use `comments` instead of `comment`
+
 ### Added
 
 - Added negation flags for symmetric feature control (#120)

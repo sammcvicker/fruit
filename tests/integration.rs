@@ -249,7 +249,7 @@ fn test_json_output() {
 
     let main_rs = main_rs.unwrap();
     assert_eq!(main_rs["type"], "file");
-    assert_eq!(main_rs["comment"], "CLI entry point");
+    assert_eq!(main_rs["comments"], "CLI entry point");
 }
 
 #[test]
@@ -264,15 +264,15 @@ fn test_json_no_comments() {
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let children = json["children"].as_array().unwrap();
 
-    // File with comment should have comment field
+    // File with comment should have comments field
     let main_rs = children.iter().find(|c| c["name"] == "main.rs").unwrap();
-    assert!(main_rs["comment"].is_string());
+    assert!(main_rs["comments"].is_string());
 
-    // File without comment should not have comment field (skip_serializing_if)
+    // File without comment should not have comments field (skip_serializing_if)
     let empty = children.iter().find(|c| c["name"] == "empty.rs").unwrap();
     assert!(
-        empty.get("comment").is_none(),
-        "comment should be omitted when None"
+        empty.get("comments").is_none(),
+        "comments should be omitted when None"
     );
 }
 
