@@ -122,7 +122,7 @@ impl MetadataBlock {
     }
 
     /// Create a metadata block with only type lines from type signatures.
-    pub fn from_types(signatures: Vec<crate::types::TypeSignature>) -> Self {
+    pub fn from_types(signatures: Vec<crate::extractors::types::TypeSignature>) -> Self {
         let type_lines = signatures
             .into_iter()
             .map(|ts| {
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_metadata_block_from_types() {
-        use crate::types::TypeSignature;
+        use crate::extractors::types::TypeSignature;
         let block = MetadataBlock::from_types(vec![
             TypeSignature::new("pub fn foo()".to_string(), "foo".to_string(), 0),
             TypeSignature::new("pub struct Bar".to_string(), "Bar".to_string(), 4),
@@ -472,7 +472,7 @@ mod tests {
         let with_comments = MetadataBlock::from_comments("content");
         assert!(!with_comments.is_empty());
 
-        use crate::types::TypeSignature;
+        use crate::extractors::types::TypeSignature;
         let with_types = MetadataBlock::from_types(vec![TypeSignature::new(
             "fn foo()".to_string(),
             "foo".to_string(),

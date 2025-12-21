@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Unified extractor module architecture** (#135)
+  - Created new `src/extractors/` module to consolidate extraction logic
+  - Introduced `Extractor` trait providing common interface for all extractors
+  - Added `ExtractionConfig` for controlling which metadata types to extract
+  - Moved extraction logic from root modules to extractors submodules:
+    - `comments.rs` → `extractors/comments.rs`
+    - `types.rs` → `extractors/types.rs`
+    - `todos.rs` → `extractors/todos.rs`
+    - `imports.rs` → `extractors/imports.rs`
+  - Created `extractors/languages/` placeholder for future language-specific logic
+  - Old modules remain as re-exports for backward compatibility
+  - **Benefits**: Single source of truth for language definitions, easier to add new languages, consistent error handling, better testability, cleaner module boundaries
+  - **Breaking change**: Module paths changed (use `crate::extractors::*` for new code)
+  - All existing tests pass, no functional changes
+
 ### Removed
 
 - Removed legacy GitFilter implementation and git tracking functionality (#134)
