@@ -3,6 +3,7 @@
 //! This module collects and formats aggregate statistics about a codebase:
 //! file counts by type, line counts, and language breakdown.
 
+use crate::language::Language;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -53,8 +54,10 @@ pub struct StatsCollector {
     config: StatsConfig,
     files: usize,
     directories: usize,
-    /// Maps extension -> (file_count, line_count)
-    by_extension: HashMap<String, (usize, usize)>,
+    /// Maps Language -> (extensions, file_count, line_count)
+    by_language: HashMap<Language, (Vec<String>, usize, usize)>,
+    /// Maps unknown extension -> (file_count, line_count)
+    by_unknown_extension: HashMap<String, (usize, usize)>,
 }
 
 impl StatsCollector {
@@ -74,13 +77,40 @@ impl StatsCollector {
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
 
-        let entry = self.by_extension.entry(ext.clone()).or_insert((0, 0));
-        entry.0 += 1;
+        let line_count = if self.config.count_lines {
+            count_lines(path).unwrap_or(0)
+        } else {
+            0
+        };
 
-        if self.config.count_lines {
-            if let Some(lines) = count_lines(path) {
-                entry.1 += lines;
+        // Try to map to a known language
+        if let Some(language) = Language::from_extension(&ext) {
+            let entry = self
+                .by_language
+                .entry(language)
+                .or_insert((Vec::new(), 0, 0));
+
+            // Track the extension if not already tracked
+            let ext_with_dot = if ext.is_empty() {
+                String::new()
+            } else {
+                format!(".{}", ext)
+            };
+
+            if !ext_with_dot.is_empty() && !entry.0.contains(&ext_with_dot) {
+                entry.0.push(ext_with_dot);
             }
+
+            entry.1 += 1;
+            entry.2 += line_count;
+        } else {
+            // Unknown extension
+            let entry = self
+                .by_unknown_extension
+                .entry(ext.clone())
+                .or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += line_count;
         }
     }
 
@@ -91,26 +121,14 @@ impl StatsCollector {
 
     /// Finalize and return the collected statistics.
     pub fn finalize(self) -> CodebaseStats {
-        // Group extensions by language
-        let mut by_language: HashMap<&str, (Vec<String>, usize, usize)> = HashMap::new();
-
-        for (ext, (file_count, line_count)) in &self.by_extension {
-            let lang = extension_to_language(ext);
-            let entry = by_language.entry(lang).or_insert((Vec::new(), 0, 0));
-            if !ext.is_empty() && !entry.0.contains(&format!(".{}", ext)) {
-                entry.0.push(format!(".{}", ext));
-            }
-            entry.1 += file_count;
-            entry.2 += line_count;
-        }
-
-        // Convert to sorted vector
-        let mut languages: Vec<LanguageStats> = by_language
+        // Convert known languages to LanguageStats
+        let mut languages: Vec<LanguageStats> = self
+            .by_language
             .into_iter()
             .map(|(lang, (mut exts, files, lines))| {
                 exts.sort();
                 LanguageStats {
-                    language: lang.to_string(),
+                    language: lang.name().to_string(),
                     files,
                     lines: if self.config.count_lines {
                         Some(lines)
@@ -121,6 +139,43 @@ impl StatsCollector {
                 }
             })
             .collect();
+
+        // Add unknown extensions grouped by display name
+        for (ext, (file_count, line_count)) in self.by_unknown_extension {
+            let display_name = extension_to_language_name(&ext);
+            let ext_with_dot = if ext.is_empty() {
+                String::new()
+            } else {
+                format!(".{}", ext)
+            };
+
+            // Try to find existing entry with same display name
+            if let Some(existing) = languages.iter_mut().find(|l| l.language == display_name) {
+                existing.files += file_count;
+                if let Some(existing_lines) = &mut existing.lines {
+                    *existing_lines += line_count;
+                }
+                if !ext_with_dot.is_empty() && !existing.extensions.contains(&ext_with_dot) {
+                    existing.extensions.push(ext_with_dot);
+                    existing.extensions.sort();
+                }
+            } else {
+                languages.push(LanguageStats {
+                    language: display_name.to_string(),
+                    files: file_count,
+                    lines: if self.config.count_lines {
+                        Some(line_count)
+                    } else {
+                        None
+                    },
+                    extensions: if ext_with_dot.is_empty() {
+                        vec![]
+                    } else {
+                        vec![ext_with_dot]
+                    },
+                });
+            }
+        }
 
         // Sort by file count descending
         languages.sort_by(|a, b| b.files.cmp(&a.files));
@@ -161,37 +216,14 @@ fn count_lines(path: &Path) -> Option<usize> {
     })
 }
 
-/// Map file extension to language name.
-fn extension_to_language(ext: &str) -> &'static str {
+/// Map file extension to language name for extensions not in the Language enum.
+/// This handles web frameworks, config files, and other file types not used for
+/// code analysis but still useful for statistics.
+fn extension_to_language_name(ext: &str) -> &'static str {
     match ext {
-        // Rust
-        "rs" => "Rust",
-        // JavaScript/TypeScript
-        "js" | "mjs" | "cjs" => "JavaScript",
-        "ts" | "mts" | "cts" => "TypeScript",
+        // Web (JSX/TSX are handled by Language enum as JavaScript/TypeScript)
         "jsx" => "JSX",
         "tsx" => "TSX",
-        // Python
-        "py" | "pyw" | "pyi" => "Python",
-        // Go
-        "go" => "Go",
-        // Java/Kotlin
-        "java" => "Java",
-        "kt" | "kts" => "Kotlin",
-        // C/C++
-        "c" | "h" => "C",
-        "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => "C++",
-        // C#
-        "cs" => "C#",
-        // Swift
-        "swift" => "Swift",
-        // Ruby
-        "rb" | "erb" => "Ruby",
-        // PHP
-        "php" => "PHP",
-        // Shell
-        "sh" | "bash" | "zsh" | "fish" => "Shell",
-        // Web
         "html" | "htm" => "HTML",
         "css" => "CSS",
         "scss" | "sass" => "Sass",
@@ -208,7 +240,7 @@ fn extension_to_language(ext: &str) -> &'static str {
         "md" | "markdown" => "Markdown",
         "txt" => "Text",
         "rst" => "reStructuredText",
-        // Other
+        // Other languages not in Language enum
         "sql" => "SQL",
         "graphql" | "gql" => "GraphQL",
         "proto" => "Protocol Buffers",
@@ -225,6 +257,7 @@ fn extension_to_language(ext: &str) -> &'static str {
         "dart" => "Dart",
         "zig" => "Zig",
         "nim" => "Nim",
+        "erb" => "Ruby",
         "" => "No Extension",
         _ => "Other",
     }
@@ -317,13 +350,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extension_to_language() {
-        assert_eq!(extension_to_language("rs"), "Rust");
-        assert_eq!(extension_to_language("js"), "JavaScript");
-        assert_eq!(extension_to_language("ts"), "TypeScript");
-        assert_eq!(extension_to_language("py"), "Python");
-        assert_eq!(extension_to_language("unknown"), "Other");
-        assert_eq!(extension_to_language(""), "No Extension");
+    fn test_extension_to_language_name() {
+        // Known languages should use Language enum
+        // These tests check the fallback function for unknown extensions
+        assert_eq!(extension_to_language_name("jsx"), "JSX");
+        assert_eq!(extension_to_language_name("html"), "HTML");
+        assert_eq!(extension_to_language_name("json"), "JSON");
+        assert_eq!(extension_to_language_name("md"), "Markdown");
+        assert_eq!(extension_to_language_name("unknown"), "Other");
+        assert_eq!(extension_to_language_name(""), "No Extension");
     }
 
     #[test]

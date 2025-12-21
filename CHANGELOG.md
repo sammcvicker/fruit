@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refactored stats collection to use Language enum instead of strings (#146)
+  - `StatsCollector` now internally uses `Language` enum as HashMap key for known languages
+  - Leverages existing `Language::from_extension()` and `Language::name()` methods
+  - Reduces duplication between `stats.rs` and `language.rs` modules
+  - Improves maintainability: adding a new language to `Language` enum automatically updates stats
+  - Renamed `extension_to_language()` to `extension_to_language_name()` for clarity (now only handles extensions not in Language enum)
+  - No functional changes to stats output or JSON format
 - Further consolidated comment extraction patterns by introducing multi-prefix helper (#144)
   - Added `extract_multi_prefix_line_comments()` helper for languages with multiple comment prefixes
   - Refactored Ruby, Shell, and PHP extractors to use new helper, eliminating ~50 lines of duplicate code
