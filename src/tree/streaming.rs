@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::comments::extract_first_comment;
-use crate::git::{GitFilter, GitignoreFilter};
+use crate::git::GitignoreFilter;
 use crate::imports::extract_imports;
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine};
 use crate::todos::extract_todos;
@@ -64,14 +64,9 @@ impl StreamingWalker {
         self
     }
 
-    /// Legacy method for backwards compatibility - use with_filter instead.
-    pub fn with_git_filter(self, filter: GitFilter) -> Self {
-        self.with_filter(FileFilter::GitTracked(filter))
-    }
-
     /// Set gitignore-based filtering (default behavior).
     pub fn with_gitignore_filter(self, filter: GitignoreFilter) -> Self {
-        self.with_filter(FileFilter::Gitignore(filter))
+        self.with_filter(FileFilter::new(filter))
     }
 
     /// Walk and stream output - returns (dir_count, file_count)

@@ -1,6 +1,5 @@
 //! Git repository integration and gitignore filtering
 
-use git2::{Repository, Status};
 use ignore::WalkBuilder;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -109,112 +108,11 @@ impl GitignoreFilter {
     }
 }
 
-/// Filter based on git tracking status (files in the git index).
-/// Use this with --tracked flag to show only git-tracked files.
-pub struct GitFilter {
-    tracked_files: HashSet<PathBuf>,
-    tracked_dirs: HashSet<PathBuf>,
-}
-
-impl GitFilter {
-    pub fn new(path: &Path) -> Option<Self> {
-        let repo = Repository::discover(path).ok()?;
-        let repo_root = repo.workdir()?.to_path_buf();
-        let tracked_files = Self::collect_tracked_files(&repo, &repo_root)?;
-
-        // Pre-compute all directories containing tracked files for O(1) lookup
-        let mut tracked_dirs = HashSet::new();
-        for file_path in &tracked_files {
-            let mut current = file_path.parent();
-            while let Some(dir) = current {
-                if !tracked_dirs.insert(dir.to_path_buf()) {
-                    // Already seen this directory, ancestors are also already added
-                    break;
-                }
-                current = dir.parent();
-            }
-        }
-
-        Some(Self {
-            tracked_files,
-            tracked_dirs,
-        })
-    }
-
-    fn collect_tracked_files(repo: &Repository, repo_root: &Path) -> Option<HashSet<PathBuf>> {
-        let mut tracked = HashSet::new();
-
-        // Get all files from the index (staged/tracked files)
-        let index = repo.index().ok()?;
-        for entry in index.iter() {
-            let path_str = String::from_utf8_lossy(&entry.path);
-            let full_path = repo_root.join(path_str.as_ref());
-            tracked.insert(full_path);
-        }
-
-        // Also check status for any tracked files with modifications
-        let statuses = repo.statuses(None).ok()?;
-        for entry in statuses.iter() {
-            let status = entry.status();
-            // Include files that are tracked (not new/untracked)
-            if !status.contains(Status::WT_NEW) && !status.contains(Status::IGNORED) {
-                if let Some(path) = entry.path() {
-                    let full_path = repo_root.join(path);
-                    tracked.insert(full_path);
-                }
-            }
-        }
-
-        Some(tracked)
-    }
-
-    pub fn is_tracked(&self, path: &Path) -> bool {
-        // Canonicalize the path for comparison
-        let path = match path.canonicalize() {
-            Ok(p) => p,
-            Err(_) => path.to_path_buf(),
-        };
-
-        // Direct file check - O(1)
-        if self.tracked_files.contains(&path) {
-            return true;
-        }
-
-        // Directory check - O(1) using pre-computed set
-        if path.is_dir() {
-            return self.tracked_dirs.contains(&path);
-        }
-
-        false
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::TestRepo;
-
-    #[test]
-    fn test_tracked_file() {
-        let repo = TestRepo::with_git();
-        let file_path = repo.add_file("tracked.rs", "fn main() {}");
-
-        let filter = GitFilter::new(repo.path()).unwrap();
-        assert!(filter.is_tracked(&file_path));
-    }
-
-    #[test]
-    fn test_untracked_file() {
-        let repo = TestRepo::with_git();
-        let tracked = repo.add_file("tracked.rs", "fn main() {}");
-        let untracked = repo.add_untracked("untracked.rs", "fn other() {}");
-
-        let filter = GitFilter::new(repo.path()).unwrap();
-        assert!(filter.is_tracked(&tracked));
-        assert!(!filter.is_tracked(&untracked));
-    }
-
-    // Tests for GitignoreFilter
     #[test]
     fn test_gitignore_basic() {
         let repo = TestRepo::with_git();

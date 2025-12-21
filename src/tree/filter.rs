@@ -2,22 +2,20 @@
 
 use std::path::Path;
 
-use crate::git::{GitFilter, GitignoreFilter};
+use crate::git::GitignoreFilter;
 
-/// File filter that can use either gitignore patterns or git tracking status.
-pub enum FileFilter {
-    /// Filter based on .gitignore patterns (default)
-    Gitignore(GitignoreFilter),
-    /// Filter based on git tracking status (--tracked mode)
-    GitTracked(GitFilter),
-}
+/// File filter based on .gitignore patterns.
+/// This is a newtype wrapper around GitignoreFilter for future extensibility.
+pub struct FileFilter(GitignoreFilter);
 
 impl FileFilter {
+    /// Create a new file filter from a GitignoreFilter.
+    pub fn new(filter: GitignoreFilter) -> Self {
+        Self(filter)
+    }
+
     /// Check if a path should be included.
     pub fn is_included(&self, path: &Path) -> bool {
-        match self {
-            FileFilter::Gitignore(f) => f.is_included(path),
-            FileFilter::GitTracked(f) => f.is_tracked(path),
-        }
+        self.0.is_included(path)
     }
 }

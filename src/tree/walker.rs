@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::comments::extract_first_comment;
-use crate::git::{GitFilter, GitignoreFilter};
+use crate::git::GitignoreFilter;
 use crate::imports::extract_imports;
 use crate::todos::extract_todos;
 use crate::types::extract_type_signatures;
@@ -34,14 +34,9 @@ impl TreeWalker {
         self
     }
 
-    /// Legacy method for backwards compatibility - use with_filter instead.
-    pub fn with_git_filter(self, filter: GitFilter) -> Self {
-        self.with_filter(FileFilter::GitTracked(filter))
-    }
-
     /// Set gitignore-based filtering (default behavior).
     pub fn with_gitignore_filter(self, filter: GitignoreFilter) -> Self {
-        self.with_filter(FileFilter::Gitignore(filter))
+        self.with_filter(FileFilter::new(filter))
     }
 
     pub fn walk(&self, root: &Path) -> Option<TreeNode> {

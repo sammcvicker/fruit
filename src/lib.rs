@@ -17,7 +17,7 @@ pub mod types;
 pub mod test_utils;
 
 pub use comments::extract_first_comment;
-pub use git::{GitFilter, GitignoreFilter};
+pub use git::GitignoreFilter;
 pub use imports::{FileImports, extract_imports};
 pub use language::Language;
 pub use metadata::{

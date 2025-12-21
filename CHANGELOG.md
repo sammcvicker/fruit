@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed legacy GitFilter implementation and git tracking functionality (#134)
+  - Removed unused GitFilter struct that filtered by git tracking status
+  - Removed FileFilter::GitTracked enum variant
+  - Removed legacy with_git_filter() methods from TreeWalker and StreamingWalker
+  - Removed GitFilter from public API exports
+  - Removed git_filter_init and git_is_tracked benchmarks
+  - Only GitignoreFilter (using .gitignore patterns) remains, which is the default and only used filtering mode
+  - This change reduces code surface area and removes unused backwards compatibility code
+
 ### Fixed
 
 - Added test coverage for Go block comment end marker search correctness (#131)
