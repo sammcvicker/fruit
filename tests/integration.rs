@@ -675,6 +675,417 @@ def main():
     );
 }
 
+// ============================================================================
+// Imports Extraction Tests
+// ============================================================================
+
+#[test]
+fn test_imports_rust_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "main.rs",
+        r#"//! Main entry point
+use std::path::Path;
+use clap::Parser;
+use serde::Deserialize;
+use crate::config;
+fn main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show the file
+    assert!(stdout.contains("main.rs"), "should show main.rs: {}", stdout);
+
+    // Should show imports summary
+    assert!(
+        stdout.contains("imports:"),
+        "should show imports label: {}",
+        stdout
+    );
+
+    // Should show external imports
+    assert!(
+        stdout.contains("clap"),
+        "should show clap import: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("serde"),
+        "should show serde import: {}",
+        stdout
+    );
+
+    // Should show std imports
+    assert!(
+        stdout.contains("std::"),
+        "should show std imports: {}",
+        stdout
+    );
+
+    // Should show internal imports
+    assert!(
+        stdout.contains("crate::"),
+        "should show crate imports: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_python_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "script.py",
+        r#""""Python script module."""
+import os
+import sys
+import numpy as np
+from pathlib import Path
+from . import utils
+def main(): pass"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show imports summary
+    assert!(
+        stdout.contains("imports:"),
+        "should show imports label: {}",
+        stdout
+    );
+
+    // Should show standard library imports
+    assert!(
+        stdout.contains("os") || stdout.contains("sys") || stdout.contains("pathlib"),
+        "should show stdlib imports: {}",
+        stdout
+    );
+
+    // Should show external imports
+    assert!(
+        stdout.contains("numpy"),
+        "should show numpy import: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_javascript_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "app.js",
+        r#"/** Main application module */
+import React from 'react';
+import path from 'path';
+import { Component } from './components';
+const fs = require('fs');
+export function main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show imports summary
+    assert!(
+        stdout.contains("imports:"),
+        "should show imports label: {}",
+        stdout
+    );
+
+    // Should show external imports
+    assert!(
+        stdout.contains("react"),
+        "should show react import: {}",
+        stdout
+    );
+
+    // Should show Node.js built-in
+    assert!(
+        stdout.contains("path") || stdout.contains("fs"),
+        "should show Node.js built-ins: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_go_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "main.go",
+        r#"// Package main is the entry point
+package main
+
+import "fmt"
+import (
+    "os"
+    "github.com/spf13/cobra"
+)
+
+func main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show imports summary
+    assert!(
+        stdout.contains("imports:"),
+        "should show imports label: {}",
+        stdout
+    );
+
+    // Should show standard library imports
+    assert!(
+        stdout.contains("fmt") || stdout.contains("os"),
+        "should show Go stdlib imports: {}",
+        stdout
+    );
+
+    // Should show external imports
+    assert!(
+        stdout.contains("github.com"),
+        "should show external Go package: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_json_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "main.rs",
+        r#"//! Main module
+use std::path::Path;
+use clap::Parser;
+fn main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports", "--json"]);
+    assert!(success);
+
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let children = json["children"].as_array().unwrap();
+    let main_rs = children.iter().find(|c| c["name"] == "main.rs").unwrap();
+
+    // Should have imports field
+    assert!(
+        main_rs.get("imports").is_some(),
+        "should have imports field in JSON: {:?}",
+        main_rs
+    );
+
+    let imports = &main_rs["imports"];
+
+    // Should have categorized imports
+    assert!(
+        imports.get("external").is_some(),
+        "should have external imports: {:?}",
+        imports
+    );
+    assert!(
+        imports.get("std").is_some(),
+        "should have std imports: {:?}",
+        imports
+    );
+
+    // Verify specific imports
+    let external = imports["external"].as_array().unwrap();
+    assert!(
+        external.iter().any(|i| i == "clap"),
+        "should contain clap in external: {:?}",
+        external
+    );
+
+    let std_imports = imports["std"].as_array().unwrap();
+    assert!(
+        std_imports.iter().any(|i| i.as_str().unwrap().contains("path")),
+        "should contain path in std: {:?}",
+        std_imports
+    );
+}
+
+#[test]
+fn test_imports_no_imports_flag() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "main.rs",
+        r#"//! Main module
+use std::path::Path;
+use clap::Parser;
+fn main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--no-imports"]);
+    assert!(success);
+
+    // Should show the file
+    assert!(stdout.contains("main.rs"), "should show main.rs: {}", stdout);
+
+    // Should NOT show imports
+    assert!(
+        !stdout.contains("imports:"),
+        "should not show imports with --no-imports: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_file_without_imports() {
+    let repo = TestRepo::with_git();
+    repo.add_file("empty.rs", "fn main() {}");
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports", "--json"]);
+    assert!(success);
+
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let children = json["children"].as_array().unwrap();
+    let empty_rs = children.iter().find(|c| c["name"] == "empty.rs").unwrap();
+
+    // File without imports should not have imports field (skip_serializing_if)
+    assert!(
+        empty_rs.get("imports").is_none(),
+        "imports field should be omitted when empty: {:?}",
+        empty_rs
+    );
+}
+
+#[test]
+fn test_imports_multiple_files() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "server.rs",
+        r#"//! Server module
+use std::net::TcpListener;
+use actix_web::HttpServer;
+fn main() {}"#,
+    );
+    repo.add_file(
+        "client.py",
+        r#""""Client module."""
+import requests
+import json
+def main(): pass"#,
+    );
+    repo.add_file(
+        "config.js",
+        r#"/** Config module */
+const path = require('path');
+import dotenv from 'dotenv';
+export const config = {};"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // All files should be shown with imports
+    assert!(stdout.contains("server.rs"), "should show server.rs");
+    assert!(stdout.contains("client.py"), "should show client.py");
+    assert!(stdout.contains("config.js"), "should show config.js");
+
+    // Should have imports for Rust file
+    assert!(
+        stdout.contains("actix_web"),
+        "should show actix_web import: {}",
+        stdout
+    );
+
+    // Should have imports for Python file
+    assert!(
+        stdout.contains("requests"),
+        "should show requests import: {}",
+        stdout
+    );
+
+    // Should have imports for JavaScript file
+    assert!(
+        stdout.contains("dotenv"),
+        "should show dotenv import: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_with_nested_directories() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "src/main.rs",
+        r#"//! Main entry point
+use clap::Parser;
+fn main() {}"#,
+    );
+    repo.add_file(
+        "src/lib.rs",
+        r#"//! Library module
+use serde::Serialize;
+pub fn run() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show nested structure
+    assert!(stdout.contains("src"), "should show src directory");
+    assert!(stdout.contains("main.rs"), "should show main.rs");
+    assert!(stdout.contains("lib.rs"), "should show lib.rs");
+
+    // Should show imports for both files
+    assert!(
+        stdout.contains("clap"),
+        "should show clap import: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("serde"),
+        "should show serde import: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_imports_typescript_output() {
+    let repo = TestRepo::with_git();
+    repo.add_file(
+        "app.ts",
+        r#"/** Main application module */
+import React from 'react';
+import type { Config } from '@types/node';
+import { Component } from './components';
+import * as fs from 'fs';
+export function main() {}"#,
+    );
+
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--imports"]);
+    assert!(success);
+
+    // Should show imports summary
+    assert!(
+        stdout.contains("imports:"),
+        "should show imports label: {}",
+        stdout
+    );
+
+    // Should show external imports
+    assert!(
+        stdout.contains("react"),
+        "should show react import: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("@types/node"),
+        "should show @types/node import: {}",
+        stdout
+    );
+
+    // Should show internal imports
+    assert!(
+        stdout.contains("./components"),
+        "should show relative import: {}",
+        stdout
+    );
+}
+
 #[test]
 fn test_markdown_multiline_comments_full_mode() {
     let repo = TestRepo::with_git();
