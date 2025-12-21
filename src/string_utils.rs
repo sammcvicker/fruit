@@ -57,32 +57,35 @@ mod tests {
     #[test]
     fn test_strip_any_prefix_matches_last() {
         const PREFIXES: &[&str] = &["std::", "core::", "alloc::"];
-        assert_eq!(
-            strip_any_prefix("alloc::vec::Vec", PREFIXES),
-            "vec::Vec"
-        );
+        assert_eq!(strip_any_prefix("alloc::vec::Vec", PREFIXES), "vec::Vec");
     }
 
     #[test]
     fn test_strip_any_prefix_no_match() {
         const PREFIXES: &[&str] = &["std::", "core::", "alloc::"];
-        assert_eq!(
-            strip_any_prefix("other::module", PREFIXES),
-            "other::module"
-        );
+        assert_eq!(strip_any_prefix("other::module", PREFIXES), "other::module");
     }
 
     #[test]
     fn test_strip_any_prefix_empty_prefixes() {
         const PREFIXES: &[&str] = &[];
-        assert_eq!(strip_any_prefix("std::path::Path", PREFIXES), "std::path::Path");
+        assert_eq!(
+            strip_any_prefix("std::path::Path", PREFIXES),
+            "std::path::Path"
+        );
     }
 
     #[test]
     fn test_strip_any_prefix_php_tags() {
         const PHP_PREFIXES: &[&str] = &["<?php", "<?"];
-        assert_eq!(strip_any_prefix("<?php echo 'hi';", PHP_PREFIXES), " echo 'hi';");
-        assert_eq!(strip_any_prefix("<? echo 'hi';", PHP_PREFIXES), " echo 'hi';");
+        assert_eq!(
+            strip_any_prefix("<?php echo 'hi';", PHP_PREFIXES),
+            " echo 'hi';"
+        );
+        assert_eq!(
+            strip_any_prefix("<? echo 'hi';", PHP_PREFIXES),
+            " echo 'hi';"
+        );
         assert_eq!(strip_any_prefix("echo 'hi';", PHP_PREFIXES), "echo 'hi';");
     }
 

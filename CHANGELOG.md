@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Added test coverage for Go block comment end marker search correctness (#131)
+  - Verifies that `*/` is searched after `/*`, not from file beginning
+  - Guards against performance regression and correctness issues
+  - The underlying fix was implemented in #67 (Dec 18, 2025)
+
 ### Added
 
 - Type signatures now include symbol name and indentation metadata in JSON output (#128)

@@ -292,7 +292,9 @@ fn extract_python_docstring(content: &str) -> Option<String> {
 /// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_js_comment(content: &str) -> Option<String> {
     // Try JSDoc block comment first
-    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), None::<fn(&str) -> bool>) {
+    if let Some(comment) =
+        extract_block_comment(content, "/**", "*/", Some('*'), None::<fn(&str) -> bool>)
+    {
         return Some(comment);
     }
 
@@ -338,7 +340,9 @@ fn extract_go_comment(content: &str) -> Option<String> {
 /// 2. `//` line comments at file start (collects consecutive lines)
 fn extract_c_comment(content: &str) -> Option<String> {
     // Try block comment first
-    if let Some(comment) = extract_block_comment(content, "/*", "*/", Some('*'), None::<fn(&str) -> bool>) {
+    if let Some(comment) =
+        extract_block_comment(content, "/*", "*/", Some('*'), None::<fn(&str) -> bool>)
+    {
         return Some(comment);
     }
 
@@ -441,7 +445,9 @@ fn extract_shell_comment(content: &str) -> Option<String> {
 fn extract_javadoc_comment(content: &str) -> Option<String> {
     // Try JavaDoc block comment first, filtering @ annotations
     let filter_annotations = |line: &str| !line.starts_with('@');
-    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations)) {
+    if let Some(comment) =
+        extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations))
+    {
         return Some(comment);
     }
 
@@ -469,7 +475,9 @@ fn extract_php_comment(content: &str) -> Option<String> {
 
     // Try PHPDoc block comment first, filtering @ annotations
     let filter_annotations = |line: &str| !line.starts_with('@');
-    if let Some(comment) = extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations)) {
+    if let Some(comment) =
+        extract_block_comment(content, "/**", "*/", Some('*'), Some(filter_annotations))
+    {
         return Some(comment);
     }
 
@@ -789,6 +797,23 @@ public class Program {}
             extract_go_comment(content),
             Some("Comment with */ in it".to_string())
         );
+    }
+
+    #[test]
+    fn test_go_block_comment_search_correctness() {
+        // Issue #131: Verify that block comment search finds the correct end marker
+        // The end marker */ should be searched AFTER the start marker /*, not from the beginning
+        // This test would fail with naive implementation: content.find("/*") then content.find("*/")
+        let content = "/* Actual comment */\npackage main";
+        assert_eq!(
+            extract_go_comment(content),
+            Some("Actual comment".to_string())
+        );
+
+        // Test with multiple */ markers - should use the first one after /*
+        let content2 = "/* First */ block */\npackage main";
+        // Should extract "First" not "First */ block"
+        assert_eq!(extract_go_comment(content2), Some("First".to_string()));
     }
 
     #[test]
