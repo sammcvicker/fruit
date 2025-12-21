@@ -132,6 +132,30 @@ Options:
 | Ruby | `.rb` | Top `#` comments (after magic comments) |
 | Shell | `.sh`, `.bash`, `.zsh` | `#` comments after shebang |
 
+## Output Formats
+
+### TODO Items
+
+TODO items (extracted with `--todos`) have different structures depending on the output format:
+
+**Console/Markdown output** (human-readable):
+```
+TODO: Fix this bug (line 42)
+```
+A single formatted string combining marker type, text, and line number for easy readability.
+
+**JSON output** (machine-parseable):
+```json
+{
+  "type": "TODO",
+  "text": "Fix this bug",
+  "line": 42
+}
+```
+Structured with separate fields for programmatic access, allowing consumers to filter by type, extract line numbers, or format the text as needed.
+
+This intentional difference serves the needs of each format: console output prioritizes human readability, while JSON output provides structured data for scripts and tools.
+
 ## License
 
 MIT

@@ -7,6 +7,16 @@ use serde::Serialize;
 use crate::imports::FileImports;
 
 /// Serializable TODO item for JSON output.
+///
+/// # Output Format Difference
+///
+/// JSON output provides structured fields (`type`, `text`, `line`) for programmatic access,
+/// while console/markdown output combines these into a single formatted string
+/// (e.g., "TODO: Fix this bug (line 42)") for human readability.
+///
+/// This intentional difference serves the needs of each format:
+/// - JSON: Machine-parseable, allowing filtering by type, line number extraction, etc.
+/// - Console: Human-readable, optimized for quick scanning
 #[derive(Debug, Clone, Serialize)]
 pub struct JsonTodoItem {
     #[serde(rename = "type")]

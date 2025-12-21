@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Aligns with other plural fields: `types`, `todos`, `imports`
   - This is a breaking change for JSON consumers who parse the output
   - Migration: Update JSON parsing code to use `comments` instead of `comment`
+- Documented TODO item output format differences between console and JSON (#126)
+  - Console/markdown: Single formatted string (e.g., "TODO: Fix this bug (line 42)")
+  - JSON: Structured fields for programmatic access (type, text, line)
+  - This intentional difference serves different use cases
+  - Added documentation in README and code comments
 
 ### Added
 

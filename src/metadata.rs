@@ -138,6 +138,14 @@ impl MetadataBlock {
     }
 
     /// Create a metadata block with only TODO lines.
+    ///
+    /// # Output Format Note
+    ///
+    /// Console/markdown output formats TODOs as a combined string for human readability:
+    /// "TODO: Fix this bug (line 42)"
+    ///
+    /// JSON output keeps fields separate for machine parsing (see `JsonTodoItem`):
+    /// `{"type": "TODO", "text": "Fix this bug", "line": 42}`
     pub fn from_todos(todos: &[crate::todos::TodoItem]) -> Self {
         let todo_lines = todos
             .iter()
