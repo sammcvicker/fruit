@@ -90,11 +90,11 @@ struct Args {
     no_comments: bool,
 
     /// Show exported type signatures (functions, classes, interfaces, etc.)
-    /// When specified alone, shows only types in full mode
+    /// When specified alone, shows only types (enables full output mode)
     #[arg(short = 't', long = "types")]
     types: bool,
 
-    /// Show TODO/FIXME/HACK/XXX markers from comments
+    /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
     /// When specified, extracts task markers and displays them beneath file entries
     #[arg(long = "todos")]
     todos: bool,
@@ -103,7 +103,7 @@ struct Args {
     #[arg(long = "todos-only", requires = "todos")]
     todos_only: bool,
 
-    /// Show import/dependency statements from source files
+    /// Show import/dependency statements from source files (enables full output mode)
     /// Extracts and categorizes imports (external, std, internal)
     #[arg(short = 'i', long = "imports")]
     imports: bool,

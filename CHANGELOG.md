@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documented implicit full mode behavior in help text for `-t`, `--todos`, and `-i` flags (#118)
+  - These flags now clearly state "(enables full output mode)" in their help descriptions
+  - Users can now understand why output changes when using these metadata flags
+  - No behavior changes, only improved documentation
+
 ### Added
 
 - Rust type extraction now captures impl blocks and associated functions (#117)

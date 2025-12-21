@@ -104,11 +104,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
                 (caps.get(0), caps.get(1), caps.get(2))
             {
                 let sig = clean_signature(full.as_str());
-                let symbol = format!(
-                    "{} for {}",
-                    trait_match.as_str(),
-                    type_match.as_str()
-                );
+                let symbol = format!("{} for {}", trait_match.as_str(), type_match.as_str());
                 signatures.push((sig, symbol, indent));
                 in_impl_block = true;
                 impl_indent = indent;
