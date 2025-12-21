@@ -13,7 +13,7 @@ use crate::types::extract_type_signatures;
 
 use super::config::WalkerConfig;
 use super::filter::FileFilter;
-use super::utils::{has_included_files, should_ignore_path, should_include_path};
+use super::traversal::BaseTraversal;
 
 /// Entry collected during tree traversal for parallel metadata extraction.
 #[derive(Debug)]
@@ -311,7 +311,8 @@ impl StreamingWalker {
             return None;
         }
 
-        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
+        let traversal = BaseTraversal::new(&self.config, &self.filter);
+        let at_max_depth = traversal.at_max_depth(depth);
 
         // Files are handled by their parent directory iteration
         if path.is_file() || !path.is_dir() {
@@ -319,28 +320,10 @@ impl StreamingWalker {
         }
 
         // Collect and sort directory entries
-        let dir_entries = match std::fs::read_dir(path) {
-            Ok(e) => e,
-            Err(_) => return None,
-        };
-
-        let mut dir_entries: Vec<_> = dir_entries.filter_map(|e| e.ok()).collect();
-        dir_entries.sort_by_key(|a| a.file_name());
-
-        // Filter entries
-        let filtered_entries: Vec<_> = dir_entries
-            .into_iter()
-            .filter(|entry| {
-                let entry_path = entry.path();
-                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
-            })
-            .collect();
+        let filtered_entries = traversal.read_and_filter_entries(path)?;
 
         // Get directory name
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
+        let name = traversal.get_name(path);
 
         // Handle max depth
         if at_max_depth && !is_root {
@@ -360,27 +343,7 @@ impl StreamingWalker {
         }
 
         // Build list of valid entries (files and non-empty directories)
-        let mut valid_entries: Vec<(std::fs::DirEntry, bool)> = Vec::new();
-
-        for entry in filtered_entries {
-            let entry_path = entry.path();
-
-            if entry_path.is_file() {
-                if self.config.dirs_only {
-                    continue;
-                }
-                if !should_include_path(&entry_path, &self.config, &self.filter) {
-                    continue;
-                }
-                valid_entries.push((entry, false)); // false = is file
-            } else if entry_path.is_dir()
-                && !entry_path.is_symlink()
-                && (self.config.dirs_only || has_included_files(&entry_path, &self.filter))
-            {
-                valid_entries.push((entry, true)); // true = is directory
-            }
-        }
-
+        let valid_entries = traversal.filter_valid_entries(filtered_entries);
         let total = valid_entries.len();
 
         for (i, (entry, is_dir)) in valid_entries.into_iter().enumerate() {
@@ -388,11 +351,7 @@ impl StreamingWalker {
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let is_last = i == total - 1;
 
-            let new_prefix = if is_last {
-                format!("{}    ", prefix)
-            } else {
-                format!("{}│   ", prefix)
-            };
+            let new_prefix = traversal.calculate_child_prefix(prefix, is_last);
 
             if is_dir {
                 // Add directory entry
@@ -436,7 +395,8 @@ impl StreamingWalker {
             return Ok(None);
         }
 
-        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
+        let traversal = BaseTraversal::new(&self.config, &self.filter);
+        let at_max_depth = traversal.at_max_depth(depth);
 
         // Files are handled by their parent directory iteration
         if path.is_file() || !path.is_dir() {
@@ -444,28 +404,13 @@ impl StreamingWalker {
         }
 
         // Collect and sort entries
-        let entries = match std::fs::read_dir(path) {
-            Ok(e) => e,
-            Err(_) => return Ok(None),
+        let filtered_entries = match traversal.read_and_filter_entries(path) {
+            Some(e) => e,
+            None => return Ok(None),
         };
 
-        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by_key(|a| a.file_name());
-
-        // Filter entries first to know which ones will be included
-        let filtered_entries: Vec<_> = entries
-            .into_iter()
-            .filter(|entry| {
-                let entry_path = entry.path();
-                !should_ignore_path(&entry_path, &self.config.ignore_patterns)
-            })
-            .collect();
-
         // Get the directory name for output
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
+        let name = traversal.get_name(path);
 
         // If at max depth, output directory but don't descend
         if at_max_depth && !is_root {
@@ -491,7 +436,7 @@ impl StreamingWalker {
                 if self.config.dirs_only {
                     continue;
                 }
-                if !should_include_path(&entry_path, &self.config, &self.filter) {
+                if !traversal.should_include(&entry_path) {
                     continue;
                 }
                 let metadata = self.extract_metadata(&entry_path);
@@ -508,7 +453,7 @@ impl StreamingWalker {
                 valid_entries.push((entry, false, metadata));
             } else if entry_path.is_dir() && !entry_path.is_symlink() {
                 // Check if this directory has any content (or if we're in dirs_only mode)
-                if self.config.dirs_only || has_included_files(&entry_path, &self.filter) {
+                if self.config.dirs_only || traversal.has_included_files(&entry_path) {
                     valid_entries.push((entry, true, None));
                 }
             }
@@ -522,12 +467,7 @@ impl StreamingWalker {
             let is_last = i == total - 1;
 
             // Calculate the prefix for this entry's children
-            // (based on whether this entry is last among its siblings)
-            let new_prefix = if is_last {
-                format!("{}    ", prefix)
-            } else {
-                format!("{}│   ", prefix)
-            };
+            let new_prefix = traversal.calculate_child_prefix(prefix, is_last);
 
             if is_dir {
                 output.output_node(&entry_name, None, true, is_last, prefix, false, None)?;

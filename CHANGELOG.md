@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extracted common traversal logic from StreamingWalker and TreeWalker into shared BaseTraversal (#141)
+  - Created new `tree/traversal.rs` module with `BaseTraversal` struct for common tree walking functionality
+  - Eliminates code duplication in directory traversal, filtering, and entry processing
+  - Both walkers now use shared methods: `at_max_depth()`, `should_include()`, `should_ignore()`, `read_and_filter_entries()`, `filter_valid_entries()`, `calculate_child_prefix()`
+  - Improves maintainability: changes to traversal logic only need to be made in one place
+  - Better extensibility: new walker implementations can reuse the same traversal logic
+  - No functional changes, all existing tests pass
 - Standardized help text detail level across CLI flags (#138)
   - Enhanced `--json` flag help to explain programmatic processing and mutual exclusivity with `--markdown`
   - Enhanced `--stats` flag help to explain what statistics are displayed

@@ -11,7 +11,8 @@ use crate::types::extract_type_signatures;
 use super::config::WalkerConfig;
 use super::filter::FileFilter;
 use super::json_types::{JsonTodoItem, JsonTypeItem, TreeNode};
-use super::utils::{get_file_size, has_included_files, should_ignore_path, should_include_path};
+use super::traversal::BaseTraversal;
+use super::utils::get_file_size;
 
 /// Tree walker that builds the full tree in memory.
 /// Required for JSON output serialization.
@@ -49,18 +50,15 @@ impl TreeWalker {
             return None;
         }
 
-        let at_max_depth = self.config.max_depth.is_some_and(|max| depth >= max);
-
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
+        let traversal = BaseTraversal::new(&self.config, &self.filter);
+        let at_max_depth = traversal.at_max_depth(depth);
+        let name = traversal.get_name(path);
 
         if path.is_file() {
             if self.config.dirs_only {
                 return None;
             }
-            if !should_include_path(path, &self.config, &self.filter) {
+            if !traversal.should_include(path) {
                 return None;
             }
             let comment = if self.config.extract_comments {
@@ -126,20 +124,10 @@ impl TreeWalker {
         }
 
         let mut children = Vec::new();
-        let entries = match std::fs::read_dir(path) {
-            Ok(e) => e,
-            Err(_) => return None,
-        };
-
-        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by_key(|a| a.file_name());
+        let entries = traversal.read_and_filter_entries(path)?;
 
         for entry in entries {
             let entry_path = entry.path();
-
-            if should_ignore_path(&entry_path, &self.config.ignore_patterns) {
-                continue;
-            }
 
             if let Some(node) = self.walk_dir(&entry_path, depth + 1) {
                 // Skip empty directories (but only if not in dirs_only mode
@@ -152,7 +140,7 @@ impl TreeWalker {
                     // Otherwise, skip truly empty directories (those with no tracked files)
                     if c.is_empty()
                         && !self.config.dirs_only
-                        && !has_included_files(&entry_path, &self.filter)
+                        && !traversal.has_included_files(&entry_path)
                     {
                         continue;
                     }

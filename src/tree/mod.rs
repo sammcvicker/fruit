@@ -10,6 +10,7 @@ mod config;
 mod filter;
 mod json_types;
 mod streaming;
+mod traversal;
 mod utils;
 mod walker;
 
