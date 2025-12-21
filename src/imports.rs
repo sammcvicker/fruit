@@ -5,6 +5,7 @@
 
 use regex::Regex;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -52,6 +53,41 @@ impl FileImports {
     }
 }
 
+/// Builder for FileImports that uses HashSet for efficient deduplication.
+/// This avoids O(n) contains() checks when building import lists.
+#[derive(Debug, Default)]
+struct ImportsBuilder {
+    external: HashSet<String>,
+    std: HashSet<String>,
+    internal: HashSet<String>,
+}
+
+impl ImportsBuilder {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn add_external(&mut self, pkg: impl Into<String>) {
+        self.external.insert(pkg.into());
+    }
+
+    fn add_std(&mut self, module: impl Into<String>) {
+        self.std.insert(module.into());
+    }
+
+    fn add_internal(&mut self, path: impl Into<String>) {
+        self.internal.insert(path.into());
+    }
+
+    fn build(self) -> FileImports {
+        FileImports {
+            external: self.external.into_iter().collect(),
+            std: self.std.into_iter().collect(),
+            internal: self.internal.into_iter().collect(),
+        }
+    }
+}
+
 /// Extract imports from a file.
 pub fn extract_imports(path: &Path) -> Option<FileImports> {
     let (content, _extension) = read_source_file(path)?;
@@ -77,7 +113,7 @@ static RUST_USE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^use\s+([^;]+);").expect("RUST_USE regex is invalid"));
 
 fn extract_rust_imports(content: &str) -> Option<FileImports> {
-    let mut imports = FileImports::default();
+    let mut builder = ImportsBuilder::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -85,15 +121,15 @@ fn extract_rust_imports(content: &str) -> Option<FileImports> {
         if let Some(caps) = RUST_USE.captures(trimmed) {
             if let Some(use_path) = caps.get(1) {
                 let path_str = use_path.as_str().trim();
-                categorize_rust_import(path_str, &mut imports);
+                categorize_rust_import(path_str, &mut builder);
             }
         }
     }
 
-    Some(imports)
+    Some(builder.build())
 }
 
-fn categorize_rust_import(path: &str, imports: &mut FileImports) {
+fn categorize_rust_import(path: &str, builder: &mut ImportsBuilder) {
     // Extract the root crate/module name
     let root = path.split("::").next().unwrap_or(path);
 
@@ -102,20 +138,20 @@ fn categorize_rust_import(path: &str, imports: &mut FileImports) {
         // For now, just use the root
         let root_name = root.trim();
         if root_name == "std" || root_name == "core" || root_name == "alloc" {
-            imports.std.push(simplify_path(path));
+            builder.add_std(simplify_path(path));
         } else if root_name == "crate" || root_name == "self" || root_name == "super" {
-            imports.internal.push(simplify_path(path));
+            builder.add_internal(simplify_path(path));
         } else {
-            imports.external.push(root_name.to_string());
+            builder.add_external(root_name);
         }
     } else {
         // Simple import
         if root == "std" || root == "core" || root == "alloc" {
-            imports.std.push(simplify_path(path));
+            builder.add_std(simplify_path(path));
         } else if root == "crate" || root == "self" || root == "super" {
-            imports.internal.push(simplify_path(path));
+            builder.add_internal(simplify_path(path));
         } else {
-            imports.external.push(root.to_string());
+            builder.add_external(root);
         }
     }
 }
@@ -186,7 +222,7 @@ const NODE_BUILTINS: &[&str] = &[
 ];
 
 fn extract_typescript_imports(content: &str) -> Option<FileImports> {
-    let mut imports = FileImports::default();
+    let mut builder = ImportsBuilder::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -194,23 +230,23 @@ fn extract_typescript_imports(content: &str) -> Option<FileImports> {
         // Check import statements
         if let Some(caps) = TS_IMPORT.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_js_import(module.as_str(), &mut imports);
+                categorize_js_import(module.as_str(), &mut builder);
             }
         }
 
         // Check export from statements
         if let Some(caps) = TS_EXPORT_FROM.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_js_import(module.as_str(), &mut imports);
+                categorize_js_import(module.as_str(), &mut builder);
             }
         }
     }
 
-    Some(imports)
+    Some(builder.build())
 }
 
 fn extract_javascript_imports(content: &str) -> Option<FileImports> {
-    let mut imports = FileImports::default();
+    let mut builder = ImportsBuilder::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -218,54 +254,50 @@ fn extract_javascript_imports(content: &str) -> Option<FileImports> {
         // Check ES6 import statements
         if let Some(caps) = TS_IMPORT.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_js_import(module.as_str(), &mut imports);
+                categorize_js_import(module.as_str(), &mut builder);
             }
         }
 
         // Check require() calls
         if let Some(caps) = JS_REQUIRE.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_js_import(module.as_str(), &mut imports);
+                categorize_js_import(module.as_str(), &mut builder);
             }
         }
 
         // Check export from statements
         if let Some(caps) = TS_EXPORT_FROM.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_js_import(module.as_str(), &mut imports);
+                categorize_js_import(module.as_str(), &mut builder);
             }
         }
     }
 
-    Some(imports)
+    Some(builder.build())
 }
 
-fn categorize_js_import(module: &str, imports: &mut FileImports) {
+fn categorize_js_import(module: &str, builder: &mut ImportsBuilder) {
     // Relative imports
     if module.starts_with("./") || module.starts_with("../") {
-        imports.internal.push(module.to_string());
+        builder.add_internal(module);
     }
     // Node.js builtins (with or without node: prefix)
     else if let Some(stripped) = module.strip_prefix("node:") {
-        imports.std.push(stripped.to_string());
+        builder.add_std(stripped);
     } else if NODE_BUILTINS.contains(&module) {
-        imports.std.push(module.to_string());
+        builder.add_std(module);
     }
     // Scoped packages like @types/node
     else if module.starts_with('@') {
         // Get just the package name (e.g., @types/node -> @types/node)
         let pkg = module.split('/').take(2).collect::<Vec<_>>().join("/");
-        if !imports.external.contains(&pkg) {
-            imports.external.push(pkg);
-        }
+        builder.add_external(pkg);
     }
     // Regular npm packages
     else {
         // Get just the package name (e.g., lodash/fp -> lodash)
         let pkg = module.split('/').next().unwrap_or(module);
-        if !imports.external.contains(&pkg.to_string()) {
-            imports.external.push(pkg.to_string());
-        }
+        builder.add_external(pkg);
     }
 }
 
@@ -477,7 +509,7 @@ const PYTHON_STDLIB: &[&str] = &[
 ];
 
 fn extract_python_imports(content: &str) -> Option<FileImports> {
-    let mut imports = FileImports::default();
+    let mut builder = ImportsBuilder::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -490,7 +522,7 @@ fn extract_python_imports(content: &str) -> Option<FileImports> {
         // Check "import X" statements
         if let Some(caps) = PY_IMPORT.captures(trimmed) {
             if let Some(module) = caps.get(1) {
-                categorize_python_import(module.as_str(), false, &mut imports);
+                categorize_python_import(module.as_str(), false, &mut builder);
             }
         }
 
@@ -506,23 +538,21 @@ fn extract_python_imports(content: &str) -> Option<FileImports> {
                 } else {
                     dots.to_string()
                 };
-                imports.internal.push(name);
+                builder.add_internal(name);
             } else if let Some(m) = module {
-                categorize_python_import(m, true, &mut imports);
+                categorize_python_import(m, true, &mut builder);
             }
         }
     }
 
-    Some(imports)
+    Some(builder.build())
 }
 
-fn categorize_python_import(module: &str, _is_from: bool, imports: &mut FileImports) {
+fn categorize_python_import(module: &str, _is_from: bool, builder: &mut ImportsBuilder) {
     if PYTHON_STDLIB.contains(&module) {
-        if !imports.std.contains(&module.to_string()) {
-            imports.std.push(module.to_string());
-        }
-    } else if !imports.external.contains(&module.to_string()) {
-        imports.external.push(module.to_string());
+        builder.add_std(module);
+    } else {
+        builder.add_external(module);
     }
 }
 
@@ -539,7 +569,7 @@ static GO_IMPORT_BLOCK_LINE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 fn extract_go_imports(content: &str) -> Option<FileImports> {
-    let mut imports = FileImports::default();
+    let mut builder = ImportsBuilder::new();
     let mut in_import_block = false;
 
     for line in content.lines() {
@@ -548,7 +578,7 @@ fn extract_go_imports(content: &str) -> Option<FileImports> {
         // Single-line import
         if let Some(caps) = GO_IMPORT_SINGLE.captures(trimmed) {
             if let Some(pkg) = caps.get(1) {
-                categorize_go_import(pkg.as_str(), &mut imports);
+                categorize_go_import(pkg.as_str(), &mut builder);
             }
         }
 
@@ -568,25 +598,23 @@ fn extract_go_imports(content: &str) -> Option<FileImports> {
         if in_import_block {
             if let Some(caps) = GO_IMPORT_BLOCK_LINE.captures(trimmed) {
                 if let Some(pkg) = caps.get(1) {
-                    categorize_go_import(pkg.as_str(), &mut imports);
+                    categorize_go_import(pkg.as_str(), &mut builder);
                 }
             }
         }
     }
 
-    Some(imports)
+    Some(builder.build())
 }
 
-fn categorize_go_import(pkg: &str, imports: &mut FileImports) {
+fn categorize_go_import(pkg: &str, builder: &mut ImportsBuilder) {
     // Go standard library doesn't have dots in path
     if !pkg.contains('.') && !pkg.contains('/') {
-        if !imports.std.contains(&pkg.to_string()) {
-            imports.std.push(pkg.to_string());
-        }
+        builder.add_std(pkg);
     }
     // Internal package (same module)
     else if pkg.contains("/internal/") || pkg.starts_with("internal/") {
-        imports.internal.push(pkg.to_string());
+        builder.add_internal(pkg);
     }
     // External package
     else {
@@ -598,9 +626,7 @@ fn categorize_go_import(pkg: &str, imports: &mut FileImports) {
         } else {
             pkg.to_string()
         };
-        if !imports.external.contains(&key) {
-            imports.external.push(key);
-        }
+        builder.add_external(key);
     }
 }
 

@@ -124,6 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Use HashSet for import deduplication to eliminate O(n²) contains() checks (#133)
+  - Import categorization now uses HashSet internally, converting to Vec at the end
+  - Avoids repeated linear searches when building import lists for files with many imports
+  - Improves performance from O(n²) to O(n) for import extraction
 - Removed unnecessary HashSet clone in GitignoreFilter::new() (#115)
 
 ### Added
