@@ -696,7 +696,11 @@ fn main() {}"#,
     assert!(success);
 
     // Should show the file
-    assert!(stdout.contains("main.rs"), "should show main.rs: {}", stdout);
+    assert!(
+        stdout.contains("main.rs"),
+        "should show main.rs: {}",
+        stdout
+    );
 
     // Should show imports summary
     assert!(
@@ -900,7 +904,9 @@ fn main() {}"#,
 
     let std_imports = imports["std"].as_array().unwrap();
     assert!(
-        std_imports.iter().any(|i| i.as_str().unwrap().contains("path")),
+        std_imports
+            .iter()
+            .any(|i| i.as_str().unwrap().contains("path")),
         "should contain path in std: {:?}",
         std_imports
     );
@@ -921,7 +927,11 @@ fn main() {}"#,
     assert!(success);
 
     // Should show the file
-    assert!(stdout.contains("main.rs"), "should show main.rs: {}", stdout);
+    assert!(
+        stdout.contains("main.rs"),
+        "should show main.rs: {}",
+        stdout
+    );
 
     // Should NOT show imports
     assert!(

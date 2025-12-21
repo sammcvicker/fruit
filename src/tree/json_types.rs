@@ -28,7 +28,7 @@ pub struct JsonTodoItem {
 impl From<&crate::todos::TodoItem> for JsonTodoItem {
     fn from(item: &crate::todos::TodoItem) -> Self {
         Self {
-            marker_type: item.marker_type.clone(),
+            marker_type: item.marker_type.to_string(),
             text: item.text.clone(),
             line: item.line,
         }

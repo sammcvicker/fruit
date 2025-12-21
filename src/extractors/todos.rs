@@ -3,6 +3,7 @@
 //! This module extracts task markers from comments across source files.
 //! Supported markers: TODO, FIXME, HACK, XXX, BUG, NOTE
 
+use std::fmt;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -19,11 +20,58 @@ static TODO_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         .expect("TODO_PATTERN regex is invalid")
 });
 
+/// The type of task marker found in a comment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MarkerType {
+    /// Tasks to be done
+    Todo,
+    /// Code that needs fixing
+    Fixme,
+    /// Temporary workarounds
+    Hack,
+    /// Problematic or unclear code
+    Xxx,
+    /// Known bugs
+    Bug,
+    /// Important notes
+    Note,
+}
+
+impl MarkerType {
+    /// Parse a marker type from a string (case-insensitive).
+    /// Returns None if the string doesn't match a known marker type.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "TODO" => Some(Self::Todo),
+            "FIXME" => Some(Self::Fixme),
+            "HACK" => Some(Self::Hack),
+            "XXX" => Some(Self::Xxx),
+            "BUG" => Some(Self::Bug),
+            "NOTE" => Some(Self::Note),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for MarkerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Todo => "TODO",
+            Self::Fixme => "FIXME",
+            Self::Hack => "HACK",
+            Self::Xxx => "XXX",
+            Self::Bug => "BUG",
+            Self::Note => "NOTE",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 /// A single TODO/FIXME marker extracted from a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TodoItem {
     /// The type of marker (TODO, FIXME, HACK, XXX, BUG, NOTE)
-    pub marker_type: String,
+    pub marker_type: MarkerType,
     /// The text content after the marker
     pub text: String,
     /// The line number where this TODO was found (1-indexed)
@@ -73,10 +121,11 @@ fn extract_todos_from_content(content: &str) -> Vec<TodoItem> {
         if let Some(caps) = TODO_PATTERN.captures(line) {
             // Group 1 contains the marker type (TODO, FIXME, etc.)
             // Group 2 contains the text after the colon
-            let marker_type = caps
-                .get(1)
-                .map(|m| m.as_str().to_uppercase())
-                .unwrap_or_else(|| "TODO".to_string());
+            let marker_str = caps.get(1).map(|m| m.as_str()).unwrap_or("TODO");
+
+            // Parse the marker type, defaulting to TODO if parsing fails
+            let marker_type = MarkerType::parse(marker_str).unwrap_or(MarkerType::Todo);
+
             let text = caps
                 .get(2)
                 .map(|m| m.as_str().trim().to_string())
@@ -197,10 +246,10 @@ fn bar() {}
 "#;
         let todos = extract_todos_from_content(content);
         assert_eq!(todos.len(), 2);
-        assert_eq!(todos[0].marker_type, "TODO");
+        assert_eq!(todos[0].marker_type, MarkerType::Todo);
         assert_eq!(todos[0].text, "implement this function");
         assert_eq!(todos[0].line, 2);
-        assert_eq!(todos[1].marker_type, "FIXME");
+        assert_eq!(todos[1].marker_type, MarkerType::Fixme);
         assert_eq!(todos[1].text, "memory leak here");
         assert_eq!(todos[1].line, 5);
     }
@@ -217,12 +266,12 @@ fn bar() {}
 "#;
         let todos = extract_todos_from_content(content);
         assert_eq!(todos.len(), 6);
-        assert_eq!(todos[0].marker_type, "TODO");
-        assert_eq!(todos[1].marker_type, "FIXME");
-        assert_eq!(todos[2].marker_type, "HACK");
-        assert_eq!(todos[3].marker_type, "XXX");
-        assert_eq!(todos[4].marker_type, "BUG");
-        assert_eq!(todos[5].marker_type, "NOTE");
+        assert_eq!(todos[0].marker_type, MarkerType::Todo);
+        assert_eq!(todos[1].marker_type, MarkerType::Fixme);
+        assert_eq!(todos[2].marker_type, MarkerType::Hack);
+        assert_eq!(todos[3].marker_type, MarkerType::Xxx);
+        assert_eq!(todos[4].marker_type, MarkerType::Bug);
+        assert_eq!(todos[5].marker_type, MarkerType::Note);
     }
 
     #[test]
@@ -234,8 +283,8 @@ fn bar() {}
 "#;
         let todos = extract_todos_from_content(content);
         assert_eq!(todos.len(), 3);
-        // All should be normalized to uppercase
-        assert!(todos.iter().all(|t| t.marker_type == "TODO"));
+        // All should be normalized to the Todo enum variant
+        assert!(todos.iter().all(|t| t.marker_type == MarkerType::Todo));
     }
 
     #[test]
@@ -357,7 +406,7 @@ fn bar() {}
         let content = "# NOTE: important observation\n";
         let todos = extract_todos_from_content(content);
         assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].marker_type, "NOTE");
+        assert_eq!(todos[0].marker_type, MarkerType::Note);
     }
 
     #[test]
@@ -371,5 +420,28 @@ fn bar() {}
         let content = "// Regular comment\nfn main() {}\n// Another comment";
         let todos = extract_todos_from_content(content);
         assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn test_marker_type_parse() {
+        assert_eq!(MarkerType::parse("TODO"), Some(MarkerType::Todo));
+        assert_eq!(MarkerType::parse("todo"), Some(MarkerType::Todo));
+        assert_eq!(MarkerType::parse("Todo"), Some(MarkerType::Todo));
+        assert_eq!(MarkerType::parse("FIXME"), Some(MarkerType::Fixme));
+        assert_eq!(MarkerType::parse("HACK"), Some(MarkerType::Hack));
+        assert_eq!(MarkerType::parse("XXX"), Some(MarkerType::Xxx));
+        assert_eq!(MarkerType::parse("BUG"), Some(MarkerType::Bug));
+        assert_eq!(MarkerType::parse("NOTE"), Some(MarkerType::Note));
+        assert_eq!(MarkerType::parse("INVALID"), None);
+    }
+
+    #[test]
+    fn test_marker_type_display() {
+        assert_eq!(MarkerType::Todo.to_string(), "TODO");
+        assert_eq!(MarkerType::Fixme.to_string(), "FIXME");
+        assert_eq!(MarkerType::Hack.to_string(), "HACK");
+        assert_eq!(MarkerType::Xxx.to_string(), "XXX");
+        assert_eq!(MarkerType::Bug.to_string(), "BUG");
+        assert_eq!(MarkerType::Note.to_string(), "NOTE");
     }
 }

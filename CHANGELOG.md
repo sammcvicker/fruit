@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replaced stringly-typed TodoItem.marker_type with MarkerType enum (#142)
+  - Added `MarkerType` enum with variants: Todo, Fixme, Hack, Xxx, Bug, Note
+  - Provides type safety and exhaustive pattern matching for TODO markers
+  - Improves maintainability by eliminating string comparisons
+  - JSON output unchanged (enum converts to string via Display trait)
 - Extracted common traversal logic from StreamingWalker and TreeWalker into shared BaseTraversal (#141)
   - Created new `tree/traversal.rs` module with `BaseTraversal` struct for common tree walking functionality
   - Eliminates code duplication in directory traversal, filtering, and entry processing
