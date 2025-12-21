@@ -599,8 +599,13 @@ fn extract_metadata_from_path(
         if let Some(signatures) = extract_type_signatures(path) {
             block.type_lines = signatures
                 .into_iter()
-                .map(|(sig, sym, indent)| {
-                    MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+                .map(|ts| {
+                    MetadataLine::with_symbol(
+                        ts.signature,
+                        LineStyle::TypeSignature,
+                        ts.symbol_name,
+                        ts.indent,
+                    )
                 })
                 .collect();
         }

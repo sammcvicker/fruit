@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Guards against performance regression and correctness issues
   - The underlying fix was implemented in #67 (Dec 18, 2025)
 
+### Changed
+
+- Replaced tuple return types with named TypeSignature struct (#132)
+  - Type extraction functions now return `Vec<TypeSignature>` instead of `Vec<(String, String, usize)>`
+  - Improves code readability and maintainability with self-documenting field names
+  - Provides IDE auto-completion support for signature fields
+  - Makes future refactoring easier without breaking all call sites
+
 ### Added
 
 - Type signatures now include symbol name and indentation metadata in JSON output (#128)

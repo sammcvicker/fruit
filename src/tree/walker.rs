@@ -76,7 +76,7 @@ impl TreeWalker {
             let types = if self.config.extract_types {
                 extract_type_signatures(path).map(|sigs| {
                     sigs.into_iter()
-                        .map(|(sig, sym, indent)| JsonTypeItem::new(sig, sym, indent))
+                        .map(|ts| JsonTypeItem::new(ts.signature, ts.symbol_name, ts.indent))
                         .collect()
                 })
             } else {

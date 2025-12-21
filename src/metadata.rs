@@ -121,12 +121,17 @@ impl MetadataBlock {
         }
     }
 
-    /// Create a metadata block with only type lines (signature, symbol_name, indent tuples).
-    pub fn from_types(signatures: Vec<(String, String, usize)>) -> Self {
+    /// Create a metadata block with only type lines from type signatures.
+    pub fn from_types(signatures: Vec<crate::types::TypeSignature>) -> Self {
         let type_lines = signatures
             .into_iter()
-            .map(|(sig, sym, indent)| {
-                MetadataLine::with_symbol(sig, LineStyle::TypeSignature, sym, indent)
+            .map(|ts| {
+                MetadataLine::with_symbol(
+                    ts.signature,
+                    LineStyle::TypeSignature,
+                    ts.symbol_name,
+                    ts.indent,
+                )
             })
             .collect();
         Self {
@@ -444,9 +449,10 @@ mod tests {
 
     #[test]
     fn test_metadata_block_from_types() {
+        use crate::types::TypeSignature;
         let block = MetadataBlock::from_types(vec![
-            ("pub fn foo()".to_string(), "foo".to_string(), 0),
-            ("pub struct Bar".to_string(), "Bar".to_string(), 4),
+            TypeSignature::new("pub fn foo()".to_string(), "foo".to_string(), 0),
+            TypeSignature::new("pub struct Bar".to_string(), "Bar".to_string(), 4),
         ]);
         assert!(block.comment_lines.is_empty());
         assert_eq!(block.type_lines.len(), 2);
@@ -466,8 +472,12 @@ mod tests {
         let with_comments = MetadataBlock::from_comments("content");
         assert!(!with_comments.is_empty());
 
-        let with_types =
-            MetadataBlock::from_types(vec![("fn foo()".to_string(), "foo".to_string(), 0)]);
+        use crate::types::TypeSignature;
+        let with_types = MetadataBlock::from_types(vec![TypeSignature::new(
+            "fn foo()".to_string(),
+            "foo".to_string(),
+            0,
+        )]);
         assert!(!with_types.is_empty());
     }
 

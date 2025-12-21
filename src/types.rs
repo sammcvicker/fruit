@@ -12,6 +12,31 @@ use crate::file_utils::read_source_file;
 use crate::language::Language;
 use crate::metadata::{MetadataBlock, MetadataExtractor};
 
+/// A type signature extracted from source code.
+///
+/// Represents a public API element (function, class, struct, etc.) with its
+/// signature text, symbol name, and indentation level for display hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeSignature {
+    /// The full signature text (e.g., "pub fn process(input: &str) -> Result<String, Error>")
+    pub signature: String,
+    /// The symbol name for highlighting (e.g., "process")
+    pub symbol_name: String,
+    /// Indentation level in spaces (tabs converted to 4 spaces)
+    pub indent: usize,
+}
+
+impl TypeSignature {
+    /// Create a new type signature.
+    pub fn new(signature: String, symbol_name: String, indent: usize) -> Self {
+        Self {
+            signature,
+            symbol_name,
+            indent,
+        }
+    }
+}
+
 /// Calculate the indentation level of a line (number of spaces, tabs = 4 spaces).
 fn calculate_indent(line: &str) -> usize {
     let mut indent = 0;
@@ -26,9 +51,10 @@ fn calculate_indent(line: &str) -> usize {
 }
 
 /// Extract exported type signatures from a file.
-/// Returns a list of (signature, symbol_name, indent_level) tuples.
-/// indent_level is the number of spaces (tabs are converted to 4 spaces).
-pub fn extract_type_signatures(path: &Path) -> Option<Vec<(String, String, usize)>> {
+///
+/// Returns a list of type signatures with their symbol names and indentation levels.
+/// Indentation is measured in spaces (tabs are converted to 4 spaces).
+pub fn extract_type_signatures(path: &Path) -> Option<Vec<TypeSignature>> {
     let (content, _extension) = read_source_file(path)?;
     let language = Language::from_path(path)?;
 
@@ -73,7 +99,7 @@ static RUST_IMPL_TRAIT_FOR: LazyLock<Regex> = LazyLock::new(|| {
         .expect("RUST_IMPL_TRAIT_FOR regex is invalid")
 });
 
-fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
+fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
     let mut in_impl_block = false;
     let mut impl_indent: usize = 0;
@@ -105,7 +131,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
             {
                 let sig = clean_signature(full.as_str());
                 let symbol = format!("{} for {}", trait_match.as_str(), type_match.as_str());
-                signatures.push((sig, symbol, indent));
+                signatures.push(TypeSignature::new(sig, symbol, indent));
                 in_impl_block = true;
                 impl_indent = indent;
             }
@@ -113,7 +139,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
             // impl Type
             if let (Some(full), Some(type_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, type_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, type_match.as_str().to_string(), indent));
                 in_impl_block = true;
                 impl_indent = indent;
             }
@@ -125,7 +151,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
             {
                 if let (Some(full), Some(fn_name)) = (caps.get(0), caps.get(3)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, fn_name.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, fn_name.as_str().to_string(), indent));
                 }
             }
         } else {
@@ -135,32 +161,32 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<(String, String, usize)>
             if let Some(caps) = RUST_PUB_FN.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_STRUCT.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_ENUM.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_TRAIT.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_TYPE.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             } else if let Some(caps) = RUST_PUB_CONST.captures(trimmed) {
                 if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                     let sig = clean_signature(full.as_str());
-                    signatures.push((sig, sym_match.as_str().to_string(), indent));
+                    signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 }
             }
         }
@@ -191,7 +217,7 @@ static TS_EXPORT_ENUM: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^export\s+(const\s+)?enum\s+(\w+)[^{]*").expect("TS_EXPORT_ENUM regex is invalid")
 });
 
-fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
+fn extract_typescript_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -209,32 +235,32 @@ fn extract_typescript_signatures(content: &str) -> Option<Vec<(String, String, u
         if let Some(caps) = TS_EXPORT_FUNCTION.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_INTERFACE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_TYPE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_CONST.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = TS_EXPORT_ENUM.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         }
     }
@@ -254,7 +280,7 @@ static JS_EXPORT_CONST: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^export\s+const\s+(\w+)\s*=").expect("JS_EXPORT_CONST regex is invalid")
 });
 
-fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
+fn extract_javascript_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -271,18 +297,18 @@ fn extract_javascript_signatures(content: &str) -> Option<Vec<(String, String, u
         if let Some(caps) = JS_EXPORT_FUNCTION.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(2)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = JS_EXPORT_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = JS_EXPORT_CONST.captures(trimmed) {
             // For const, just show the declaration without the value
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = full.as_str().trim_end_matches('=').trim();
-                signatures.push((sig.to_string(), sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig.to_string(), sym_match.as_str().to_string(), indent));
             }
         }
     }
@@ -309,7 +335,7 @@ static PY_ASYNC_DEF: LazyLock<Regex> = LazyLock::new(|| {
 static PY_CLASS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^class\s+(\w+)[^:]*").expect("PY_CLASS regex is invalid"));
 
-fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
+fn extract_python_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
     let mut pending_decorators: Vec<String> = Vec::new();
 
@@ -346,31 +372,31 @@ fn extract_python_signatures(content: &str) -> Option<Vec<(String, String, usize
         if let Some(caps) = PY_ASYNC_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_ASYNC_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_DEF_WITH_RETURN.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_DEF.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 matched = true;
             }
         } else if let Some(caps) = PY_CLASS.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = build_signature_with_decorators(&pending_decorators, full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
                 matched = true;
             }
         }
@@ -417,7 +443,7 @@ static GO_EXPORTED_VAR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^var\s+([A-Z]\w*)\s+\w+").expect("GO_EXPORTED_VAR regex is invalid")
 });
 
-fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> {
+fn extract_go_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
 
     for line in content.lines() {
@@ -435,27 +461,27 @@ fn extract_go_signatures(content: &str) -> Option<Vec<(String, String, usize)>> 
         if let Some(caps) = GO_EXPORTED_METHOD.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_FUNC.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_TYPE.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_CONST.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = full.as_str().trim_end_matches('=').trim();
-                signatures.push((sig.to_string(), sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig.to_string(), sym_match.as_str().to_string(), indent));
             }
         } else if let Some(caps) = GO_EXPORTED_VAR.captures(trimmed) {
             if let (Some(full), Some(sym_match)) = (caps.get(0), caps.get(1)) {
                 let sig = clean_signature(full.as_str());
-                signatures.push((sig, sym_match.as_str().to_string(), indent));
+                signatures.push(TypeSignature::new(sig, sym_match.as_str().to_string(), indent));
             }
         }
     }
@@ -505,10 +531,10 @@ pub async fn async_process(data: Vec<u8>) -> io::Result<()> {
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].0.starts_with("pub fn process"));
-        assert_eq!(sigs[0].1, "process");
-        assert!(sigs[1].0.starts_with("pub async fn async_process"));
-        assert_eq!(sigs[1].1, "async_process");
+        assert!(sigs[0].signature.starts_with("pub fn process"));
+        assert_eq!(sigs[0].symbol_name, "process");
+        assert!(sigs[1].signature.starts_with("pub async fn async_process"));
+        assert_eq!(sigs[1].symbol_name, "async_process");
     }
 
     #[test]
@@ -527,10 +553,10 @@ pub struct Generic<T: Clone> {
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].0.starts_with("pub struct Config"));
-        assert_eq!(sigs[0].1, "Config");
-        assert!(sigs[1].0.starts_with("pub struct Generic"));
-        assert_eq!(sigs[1].1, "Generic");
+        assert!(sigs[0].signature.starts_with("pub struct Config"));
+        assert_eq!(sigs[0].symbol_name, "Config");
+        assert!(sigs[1].signature.starts_with("pub struct Generic"));
+        assert_eq!(sigs[1].symbol_name, "Generic");
     }
 
     #[test]
@@ -544,8 +570,8 @@ trait Private {}
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].0.starts_with("pub trait Handler"));
-        assert_eq!(sigs[0].1, "Handler");
+        assert!(sigs[0].signature.starts_with("pub trait Handler"));
+        assert_eq!(sigs[0].symbol_name, "Handler");
     }
 
     #[test]
@@ -560,8 +586,8 @@ enum Private {}
 "#;
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].0.starts_with("pub enum Status"));
-        assert_eq!(sigs[0].1, "Status");
+        assert!(sigs[0].signature.starts_with("pub enum Status"));
+        assert_eq!(sigs[0].symbol_name, "Status");
     }
 
     #[test]
@@ -589,16 +615,16 @@ function privateFunc() {}
 "#;
         let sigs = extract_typescript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 5);
-        assert!(sigs[0].0.starts_with("export interface User"));
-        assert_eq!(sigs[0].1, "User");
-        assert!(sigs[1].0.starts_with("export type UserId"));
-        assert_eq!(sigs[1].1, "UserId");
-        assert!(sigs[2].0.starts_with("export function getUser"));
-        assert_eq!(sigs[2].1, "getUser");
-        assert!(sigs[3].0.starts_with("export async function createUser"));
-        assert_eq!(sigs[3].1, "createUser");
-        assert!(sigs[4].0.starts_with("export const API_URL"));
-        assert_eq!(sigs[4].1, "API_URL");
+        assert!(sigs[0].signature.starts_with("export interface User"));
+        assert_eq!(sigs[0].symbol_name, "User");
+        assert!(sigs[1].signature.starts_with("export type UserId"));
+        assert_eq!(sigs[1].symbol_name, "UserId");
+        assert!(sigs[2].signature.starts_with("export function getUser"));
+        assert_eq!(sigs[2].symbol_name, "getUser");
+        assert!(sigs[3].signature.starts_with("export async function createUser"));
+        assert_eq!(sigs[3].symbol_name, "createUser");
+        assert!(sigs[4].signature.starts_with("export const API_URL"));
+        assert_eq!(sigs[4].symbol_name, "API_URL");
     }
 
     #[test]
@@ -614,10 +640,10 @@ export abstract class BaseHandler {
 "#;
         let sigs = extract_typescript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 2);
-        assert!(sigs[0].0.starts_with("export class UserService"));
-        assert_eq!(sigs[0].1, "UserService");
-        assert!(sigs[1].0.starts_with("export abstract class BaseHandler"));
-        assert_eq!(sigs[1].1, "BaseHandler");
+        assert!(sigs[0].signature.starts_with("export class UserService"));
+        assert_eq!(sigs[0].symbol_name, "UserService");
+        assert!(sigs[1].signature.starts_with("export abstract class BaseHandler"));
+        assert_eq!(sigs[1].symbol_name, "BaseHandler");
     }
 
     #[test]
@@ -641,14 +667,14 @@ function privateFunc() {}
 "#;
         let sigs = extract_javascript_signatures(content).unwrap();
         assert_eq!(sigs.len(), 4);
-        assert!(sigs[0].0.starts_with("export function calculate"));
-        assert_eq!(sigs[0].1, "calculate");
-        assert!(sigs[1].0.starts_with("export async function fetchData"));
-        assert_eq!(sigs[1].1, "fetchData");
-        assert!(sigs[2].0.starts_with("export class Calculator"));
-        assert_eq!(sigs[2].1, "Calculator");
-        assert!(sigs[3].0.starts_with("export const VERSION"));
-        assert_eq!(sigs[3].1, "VERSION");
+        assert!(sigs[0].signature.starts_with("export function calculate"));
+        assert_eq!(sigs[0].symbol_name, "calculate");
+        assert!(sigs[1].signature.starts_with("export async function fetchData"));
+        assert_eq!(sigs[1].symbol_name, "fetchData");
+        assert!(sigs[2].signature.starts_with("export class Calculator"));
+        assert_eq!(sigs[2].symbol_name, "Calculator");
+        assert!(sigs[3].signature.starts_with("export const VERSION"));
+        assert_eq!(sigs[3].symbol_name, "VERSION");
     }
 
     #[test]
@@ -686,24 +712,24 @@ class _PrivateClass:
         assert_eq!(sigs.len(), 5, "should capture 5 signatures: {:?}", sigs);
 
         // Typed functions
-        assert!(sigs[0].0.starts_with("def process"));
-        assert_eq!(sigs[0].1, "process");
+        assert!(sigs[0].signature.starts_with("def process"));
+        assert_eq!(sigs[0].symbol_name, "process");
 
         // Untyped function
-        assert!(sigs[1].0.starts_with("def simple_func"));
-        assert_eq!(sigs[1].1, "simple_func");
+        assert!(sigs[1].signature.starts_with("def simple_func"));
+        assert_eq!(sigs[1].symbol_name, "simple_func");
 
         // Typed async
-        assert!(sigs[2].0.starts_with("async def fetch"));
-        assert_eq!(sigs[2].1, "fetch");
+        assert!(sigs[2].signature.starts_with("async def fetch"));
+        assert_eq!(sigs[2].symbol_name, "fetch");
 
         // Untyped async
-        assert!(sigs[3].0.starts_with("async def fetch_untyped"));
-        assert_eq!(sigs[3].1, "fetch_untyped");
+        assert!(sigs[3].signature.starts_with("async def fetch_untyped"));
+        assert_eq!(sigs[3].symbol_name, "fetch_untyped");
 
         // Class
-        assert!(sigs[4].0.starts_with("class UserService"));
-        assert_eq!(sigs[4].1, "UserService");
+        assert!(sigs[4].signature.starts_with("class UserService"));
+        assert_eq!(sigs[4].symbol_name, "UserService");
     }
 
     #[test]
@@ -721,8 +747,8 @@ class UserService:
 "#;
         let sigs = extract_python_signatures(content).unwrap();
         assert_eq!(sigs.len(), 3);
-        assert!(sigs[0].0.contains("->"));
-        assert!(sigs[1].0.contains("->"));
+        assert!(sigs[0].signature.contains("->"));
+        assert!(sigs[1].signature.contains("->"));
     }
 
     #[test]
@@ -757,43 +783,43 @@ class MyClass:
         assert_eq!(sigs.len(), 7); // class + 6 methods
 
         // Check class
-        assert!(sigs[0].0.starts_with("class MyClass"));
-        assert_eq!(sigs[0].1, "MyClass");
+        assert!(sigs[0].signature.starts_with("class MyClass"));
+        assert_eq!(sigs[0].symbol_name, "MyClass");
 
         // Check property decorator
-        assert!(sigs[1].0.contains("@property"));
-        assert!(sigs[1].0.contains("def name(self) -> str"));
-        assert_eq!(sigs[1].1, "name");
+        assert!(sigs[1].signature.contains("@property"));
+        assert!(sigs[1].signature.contains("def name(self) -> str"));
+        assert_eq!(sigs[1].symbol_name, "name");
 
         // Check staticmethod decorator
-        assert!(sigs[2].0.contains("@staticmethod"));
-        assert!(sigs[2].0.contains("def create() -> 'MyClass'"));
-        assert_eq!(sigs[2].1, "create");
+        assert!(sigs[2].signature.contains("@staticmethod"));
+        assert!(sigs[2].signature.contains("def create() -> 'MyClass'"));
+        assert_eq!(sigs[2].symbol_name, "create");
 
         // Check classmethod decorator
-        assert!(sigs[3].0.contains("@classmethod"));
+        assert!(sigs[3].signature.contains("@classmethod"));
         assert!(
             sigs[3]
-                .0
+                .signature
                 .contains("def from_dict(cls, data: dict) -> 'MyClass'")
         );
-        assert_eq!(sigs[3].1, "from_dict");
+        assert_eq!(sigs[3].symbol_name, "from_dict");
 
         // Check custom decorator
-        assert!(sigs[4].0.contains("@app.route('/users')"));
-        assert!(sigs[4].0.contains("def get_users() -> list"));
-        assert_eq!(sigs[4].1, "get_users");
+        assert!(sigs[4].signature.contains("@app.route('/users')"));
+        assert!(sigs[4].signature.contains("def get_users() -> list"));
+        assert_eq!(sigs[4].symbol_name, "get_users");
 
         // Check multiple decorators
-        assert!(sigs[5].0.contains("@decorator1"));
-        assert!(sigs[5].0.contains("@decorator2"));
-        assert!(sigs[5].0.contains("def multi_decorated(x: int) -> int"));
-        assert_eq!(sigs[5].1, "multi_decorated");
+        assert!(sigs[5].signature.contains("@decorator1"));
+        assert!(sigs[5].signature.contains("@decorator2"));
+        assert!(sigs[5].signature.contains("def multi_decorated(x: int) -> int"));
+        assert_eq!(sigs[5].symbol_name, "multi_decorated");
 
         // Check regular method (no decorator)
-        assert!(!sigs[6].0.contains("@"));
-        assert!(sigs[6].0.contains("def regular_method(self)"));
-        assert_eq!(sigs[6].1, "regular_method");
+        assert!(!sigs[6].signature.contains("@"));
+        assert!(sigs[6].signature.contains("def regular_method(self)"));
+        assert_eq!(sigs[6].symbol_name, "regular_method");
     }
 
     #[test]
@@ -810,8 +836,8 @@ def public_method() -> None:
         let sigs = extract_python_signatures(content).unwrap();
         // Should skip _private_property but capture public_method
         assert_eq!(sigs.len(), 1);
-        assert!(sigs[0].0.contains("@staticmethod"));
-        assert_eq!(sigs[0].1, "public_method");
+        assert!(sigs[0].signature.contains("@staticmethod"));
+        assert_eq!(sigs[0].symbol_name, "public_method");
     }
 
     #[test]
@@ -844,16 +870,16 @@ func privateFunc() {}
 "#;
         let sigs = extract_go_signatures(content).unwrap();
         assert_eq!(sigs.len(), 5);
-        assert!(sigs[0].0.starts_with("type Config struct"));
-        assert_eq!(sigs[0].1, "Config");
-        assert!(sigs[1].0.starts_with("func NewConfig()"));
-        assert_eq!(sigs[1].1, "NewConfig");
-        assert!(sigs[2].0.starts_with("func (c *Config) Validate()"));
-        assert_eq!(sigs[2].1, "Validate");
-        assert!(sigs[3].0.starts_with("const DefaultPort"));
-        assert_eq!(sigs[3].1, "DefaultPort");
-        assert!(sigs[4].0.starts_with("var GlobalConfig"));
-        assert_eq!(sigs[4].1, "GlobalConfig");
+        assert!(sigs[0].signature.starts_with("type Config struct"));
+        assert_eq!(sigs[0].symbol_name, "Config");
+        assert!(sigs[1].signature.starts_with("func NewConfig()"));
+        assert_eq!(sigs[1].symbol_name, "NewConfig");
+        assert!(sigs[2].signature.starts_with("func (c *Config) Validate()"));
+        assert_eq!(sigs[2].symbol_name, "Validate");
+        assert!(sigs[3].signature.starts_with("const DefaultPort"));
+        assert_eq!(sigs[3].symbol_name, "DefaultPort");
+        assert!(sigs[4].signature.starts_with("var GlobalConfig"));
+        assert_eq!(sigs[4].symbol_name, "GlobalConfig");
     }
 
     #[test]
@@ -927,37 +953,37 @@ pub async fn standalone_fn() -> Result<(), Error> {
         assert_eq!(sigs.len(), 8);
 
         // pub struct Config
-        assert!(sigs[0].0.starts_with("pub struct Config"));
-        assert_eq!(sigs[0].1, "Config");
+        assert!(sigs[0].signature.starts_with("pub struct Config"));
+        assert_eq!(sigs[0].symbol_name, "Config");
 
         // impl Config
-        assert!(sigs[1].0.starts_with("impl Config"));
-        assert_eq!(sigs[1].1, "Config");
+        assert!(sigs[1].signature.starts_with("impl Config"));
+        assert_eq!(sigs[1].symbol_name, "Config");
 
         // pub fn new() -> Self
-        assert!(sigs[2].0.starts_with("pub fn new() -> Self"));
-        assert_eq!(sigs[2].1, "new");
-        assert!(sigs[2].2 > sigs[1].2); // Should be indented relative to impl
+        assert!(sigs[2].signature.starts_with("pub fn new() -> Self"));
+        assert_eq!(sigs[2].symbol_name, "new");
+        assert!(sigs[2].indent > sigs[1].indent); // Should be indented relative to impl
 
         // pub fn with_port(port: u16) -> Self
-        assert!(sigs[3].0.starts_with("pub fn with_port(port: u16) -> Self"));
-        assert_eq!(sigs[3].1, "with_port");
+        assert!(sigs[3].signature.starts_with("pub fn with_port(port: u16) -> Self"));
+        assert_eq!(sigs[3].symbol_name, "with_port");
 
         // fn private_method(&self) -> bool
-        assert!(sigs[4].0.starts_with("fn private_method(&self) -> bool"));
-        assert_eq!(sigs[4].1, "private_method");
+        assert!(sigs[4].signature.starts_with("fn private_method(&self) -> bool"));
+        assert_eq!(sigs[4].symbol_name, "private_method");
 
         // impl Default for Config
-        assert!(sigs[5].0.starts_with("impl Default for Config"));
-        assert_eq!(sigs[5].1, "Default for Config");
+        assert!(sigs[5].signature.starts_with("impl Default for Config"));
+        assert_eq!(sigs[5].symbol_name, "Default for Config");
 
         // fn default() -> Self
-        assert!(sigs[6].0.starts_with("fn default() -> Self"));
-        assert_eq!(sigs[6].1, "default");
+        assert!(sigs[6].signature.starts_with("fn default() -> Self"));
+        assert_eq!(sigs[6].symbol_name, "default");
 
         // pub async fn standalone_fn() -> Result<(), Error>
-        assert!(sigs[7].0.starts_with("pub async fn standalone_fn"));
-        assert_eq!(sigs[7].1, "standalone_fn");
+        assert!(sigs[7].signature.starts_with("pub async fn standalone_fn"));
+        assert_eq!(sigs[7].symbol_name, "standalone_fn");
     }
 
     #[test]
@@ -989,28 +1015,28 @@ impl<T: Default> Default for Container<T> {
         assert_eq!(sigs.len(), 6);
 
         // pub struct Container<T>
-        assert!(sigs[0].0.starts_with("pub struct Container"));
-        assert_eq!(sigs[0].1, "Container");
+        assert!(sigs[0].signature.starts_with("pub struct Container"));
+        assert_eq!(sigs[0].symbol_name, "Container");
 
         // impl<T: Clone> Container<T>
-        assert!(sigs[1].0.starts_with("impl"));
-        assert_eq!(sigs[1].1, "Container");
+        assert!(sigs[1].signature.starts_with("impl"));
+        assert_eq!(sigs[1].symbol_name, "Container");
 
         // pub fn new(value: T) -> Self
-        assert!(sigs[2].0.starts_with("pub fn new(value: T) -> Self"));
-        assert_eq!(sigs[2].1, "new");
+        assert!(sigs[2].signature.starts_with("pub fn new(value: T) -> Self"));
+        assert_eq!(sigs[2].symbol_name, "new");
 
         // pub fn get(&self) -> &T
-        assert!(sigs[3].0.starts_with("pub fn get(&self) -> &T"));
-        assert_eq!(sigs[3].1, "get");
+        assert!(sigs[3].signature.starts_with("pub fn get(&self) -> &T"));
+        assert_eq!(sigs[3].symbol_name, "get");
 
         // impl<T: Default> Default for Container<T>
-        assert!(sigs[4].0.starts_with("impl"));
-        assert_eq!(sigs[4].1, "Default for Container");
+        assert!(sigs[4].signature.starts_with("impl"));
+        assert_eq!(sigs[4].symbol_name, "Default for Container");
 
         // fn default() -> Self
-        assert!(sigs[5].0.starts_with("fn default() -> Self"));
-        assert_eq!(sigs[5].1, "default");
+        assert!(sigs[5].signature.starts_with("fn default() -> Self"));
+        assert_eq!(sigs[5].symbol_name, "default");
     }
 
     #[test]
@@ -1039,10 +1065,10 @@ impl Outer {
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 4);
 
-        assert!(sigs[0].0.starts_with("pub struct Outer"));
-        assert!(sigs[1].0.starts_with("impl Outer"));
-        assert!(sigs[2].0.starts_with("pub fn new() -> Self"));
-        assert!(sigs[3].0.starts_with("pub fn process(&self)"));
+        assert!(sigs[0].signature.starts_with("pub struct Outer"));
+        assert!(sigs[1].signature.starts_with("impl Outer"));
+        assert!(sigs[2].signature.starts_with("pub fn new() -> Self"));
+        assert!(sigs[3].signature.starts_with("pub fn process(&self)"));
     }
 
     #[test]
@@ -1063,11 +1089,11 @@ impl AsyncService {
         let sigs = extract_rust_signatures(content).unwrap();
         assert_eq!(sigs.len(), 4);
 
-        assert!(sigs[0].0.starts_with("pub struct AsyncService"));
-        assert!(sigs[1].0.starts_with("impl AsyncService"));
-        assert!(sigs[2].0.starts_with("pub async fn fetch"));
-        assert_eq!(sigs[2].1, "fetch");
-        assert!(sigs[3].0.starts_with("async fn internal_fetch"));
-        assert_eq!(sigs[3].1, "internal_fetch");
+        assert!(sigs[0].signature.starts_with("pub struct AsyncService"));
+        assert!(sigs[1].signature.starts_with("impl AsyncService"));
+        assert!(sigs[2].signature.starts_with("pub async fn fetch"));
+        assert_eq!(sigs[2].symbol_name, "fetch");
+        assert!(sigs[3].signature.starts_with("async fn internal_fetch"));
+        assert_eq!(sigs[3].symbol_name, "internal_fetch");
     }
 }
