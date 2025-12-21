@@ -107,8 +107,8 @@ struct Args {
     #[arg(long = "no-todos", conflicts_with = "todos")]
     no_todos: bool,
 
-    /// Show only files containing TODO/FIXME markers (requires --todos)
-    #[arg(long = "todos-only", requires = "todos")]
+    /// Show only files containing TODO/FIXME markers (implies --todos)
+    #[arg(long = "todos-only")]
     todos_only: bool,
 
     /// Show import/dependency statements from source files (enables full output mode)
@@ -247,11 +247,12 @@ fn main() {
     // - Comments are shown by default unless --no-comments is specified
     // - -t adds type information to output (--no-types explicitly disables)
     // - --todos adds TODO markers to output (--no-todos explicitly disables)
+    // - --todos-only implies --todos (automatically enables TODO extraction)
     // - --imports adds import information to output (--no-imports explicitly disables)
     // - -c is a no-op but makes the default explicit
     let show_comments = !args.no_comments;
     let show_types = args.types && !args.no_types;
-    let show_todos = args.todos && !args.no_todos;
+    let show_todos = (args.todos || args.todos_only) && !args.no_todos;
     let show_imports = args.imports && !args.no_imports;
 
     // When -t or --todos or --imports is specified, default to full mode

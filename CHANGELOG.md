@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Use `--no-comments` to explicitly disable comments when using `-t` or other flags
   - This makes flag behavior predictable and eliminates the complex interaction logic
   - **Migration**: If you used `-t` alone expecting no comments, add `--no-comments` explicitly
+- `--todos-only` now automatically implies `--todos` (#121)
+  - Users no longer need to specify both `--todos` and `--todos-only`
+  - Old syntax `--todos --todos-only` still works for backward compatibility
+  - New simpler syntax: just use `--todos-only`
 - Documented implicit full mode behavior in help text for `-t`, `--todos`, and `-i` flags (#118)
   - These flags now clearly state "(enables full output mode)" in their help descriptions
   - Users can now understand why output changes when using these metadata flags

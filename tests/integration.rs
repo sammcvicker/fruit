@@ -390,6 +390,32 @@ fn test_todos_only_in_nested_directories() {
     );
 }
 
+#[test]
+fn test_todos_only_without_todos_flag() {
+    // Verify that --todos-only works without requiring --todos flag
+    let repo = TestRepo::with_git();
+    repo.add_file("has_todo.rs", "// TODO: implement\nfn foo() {}");
+    repo.add_file("no_todo.rs", "// Regular comment\nfn bar() {}");
+
+    // Should work with just --todos-only (no --todos required)
+    let (stdout, _stderr, success) = run_fruit(repo.path(), &["--todos-only"]);
+    assert!(success, "fruit --todos-only should work without --todos");
+
+    // Should show file with TODO
+    assert!(
+        stdout.contains("has_todo.rs"),
+        "should show file with TODO: {}",
+        stdout
+    );
+
+    // Should NOT show file without TODO
+    assert!(
+        !stdout.contains("no_todo.rs"),
+        "should not show file without TODO: {}",
+        stdout
+    );
+}
+
 // ============================================================================
 // Markdown Output Tests
 // ============================================================================
