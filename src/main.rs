@@ -69,7 +69,9 @@ struct Args {
     #[arg(short = 'd', long = "dirs-only", help_heading = "Tree Display")]
     dirs_only: bool,
 
-    /// Show full comment, not just first line
+    /// Show full comment block instead of just the first line.
+    /// By default, only the first line of file/function comments is shown.
+    /// Use this flag to display the complete comment block.
     #[arg(
         short = 'f',
         long = "full-comment",
@@ -115,8 +117,10 @@ struct Args {
     )]
     no_types: bool,
 
-    /// Show TODO/FIXME/HACK/XXX markers from comments (enables full output mode)
-    /// Adds task markers to output beneath file entries
+    /// Show TODO/FIXME/HACK/XXX markers from comments.
+    /// Extracts task markers and displays them beneath file entries.
+    /// Note: This enables full output mode, showing complete comment blocks.
+    /// Example: fruit --todos
     #[arg(long = "todos", help_heading = "Metadata Extraction")]
     todos: bool,
 
@@ -154,7 +158,10 @@ struct Args {
     )]
     wrap: usize,
 
-    /// Output in JSON format
+    /// Output in JSON format for programmatic processing.
+    /// Produces structured JSON representing the directory tree with all metadata.
+    /// Note: Cannot be used with --markdown (mutually exclusive).
+    /// Example: fruit --json > tree.json
     #[arg(
         long = "json",
         conflicts_with = "markdown",
@@ -185,7 +192,10 @@ struct Args {
     )]
     jobs: usize,
 
-    /// Show codebase statistics (file counts, language breakdown, line counts)
+    /// Show codebase statistics instead of the tree view.
+    /// Displays file counts, language breakdown, and total line counts.
+    /// Statistics include: total files, files by language/extension, and code metrics.
+    /// Example: fruit --stats
     #[arg(long = "stats", help_heading = "Statistics")]
     stats: bool,
 

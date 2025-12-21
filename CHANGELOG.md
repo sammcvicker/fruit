@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Standardized help text detail level across CLI flags (#138)
+  - Enhanced `--json` flag help to explain programmatic processing and mutual exclusivity with `--markdown`
+  - Enhanced `--stats` flag help to explain what statistics are displayed
+  - Enhanced `--todos` flag help to clarify it enables full output mode
+  - Enhanced `--full-comment` flag help to explain the difference between default (first line) and full mode
+  - All flags now follow consistent documentation pattern with description, examples, and interaction notes
+
 ### Performance
 
 - Reduced unnecessary string allocations throughout the codebase (#136)
