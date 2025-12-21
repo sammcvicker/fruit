@@ -232,7 +232,9 @@ mod tests {
                 TreeNode::File {
                     name: "app.rs".to_string(),
                     path: PathBuf::from("test_project/app.rs"),
-                    comments: Some("Main application module\nProvides core functionality".to_string()),
+                    comments: Some(
+                        "Main application module\nProvides core functionality".to_string(),
+                    ),
                     types: Some(vec![
                         JsonTypeItem::new("pub fn main()".to_string(), "main".to_string(), 0),
                         JsonTypeItem::new("pub struct App".to_string(), "App".to_string(), 0),

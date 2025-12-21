@@ -28,7 +28,11 @@ pub struct TypeSignature {
 
 impl TypeSignature {
     /// Create a new type signature.
-    pub fn new(signature: impl Into<String>, symbol_name: impl Into<String>, indent: usize) -> Self {
+    pub fn new(
+        signature: impl Into<String>,
+        symbol_name: impl Into<String>,
+        indent: usize,
+    ) -> Self {
         Self {
             signature: signature.into(),
             symbol_name: symbol_name.into(),
@@ -98,6 +102,9 @@ static RUST_IMPL_TRAIT_FOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^impl(?:\s*<[^>]+>)?\s+(\w+)\s+for\s+(\w+)")
         .expect("RUST_IMPL_TRAIT_FOR regex is invalid")
 });
+static RUST_IMPL_FN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(pub\s+)?(async\s+)?fn\s+(\w+)[^{;]*").expect("RUST_IMPL_FN regex is invalid")
+});
 
 fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
     let mut signatures = Vec::new();
@@ -145,10 +152,7 @@ fn extract_rust_signatures(content: &str) -> Option<Vec<TypeSignature>> {
             }
         } else if in_impl_block {
             // Inside impl block, capture pub fn and fn (both public and private associated functions)
-            if let Some(caps) = Regex::new(r"^(pub\s+)?(async\s+)?fn\s+(\w+)[^{;]*")
-                .unwrap()
-                .captures(trimmed)
-            {
+            if let Some(caps) = RUST_IMPL_FN.captures(trimmed) {
                 if let (Some(full), Some(fn_name)) = (caps.get(0), caps.get(3)) {
                     let sig = clean_signature(full.as_str());
                     signatures.push(TypeSignature::new(sig, fn_name.as_str(), indent));
@@ -621,7 +625,11 @@ function privateFunc() {}
         assert_eq!(sigs[1].symbol_name, "UserId");
         assert!(sigs[2].signature.starts_with("export function getUser"));
         assert_eq!(sigs[2].symbol_name, "getUser");
-        assert!(sigs[3].signature.starts_with("export async function createUser"));
+        assert!(
+            sigs[3]
+                .signature
+                .starts_with("export async function createUser")
+        );
         assert_eq!(sigs[3].symbol_name, "createUser");
         assert!(sigs[4].signature.starts_with("export const API_URL"));
         assert_eq!(sigs[4].symbol_name, "API_URL");
@@ -642,7 +650,11 @@ export abstract class BaseHandler {
         assert_eq!(sigs.len(), 2);
         assert!(sigs[0].signature.starts_with("export class UserService"));
         assert_eq!(sigs[0].symbol_name, "UserService");
-        assert!(sigs[1].signature.starts_with("export abstract class BaseHandler"));
+        assert!(
+            sigs[1]
+                .signature
+                .starts_with("export abstract class BaseHandler")
+        );
         assert_eq!(sigs[1].symbol_name, "BaseHandler");
     }
 
@@ -669,7 +681,11 @@ function privateFunc() {}
         assert_eq!(sigs.len(), 4);
         assert!(sigs[0].signature.starts_with("export function calculate"));
         assert_eq!(sigs[0].symbol_name, "calculate");
-        assert!(sigs[1].signature.starts_with("export async function fetchData"));
+        assert!(
+            sigs[1]
+                .signature
+                .starts_with("export async function fetchData")
+        );
         assert_eq!(sigs[1].symbol_name, "fetchData");
         assert!(sigs[2].signature.starts_with("export class Calculator"));
         assert_eq!(sigs[2].symbol_name, "Calculator");
@@ -813,7 +829,11 @@ class MyClass:
         // Check multiple decorators
         assert!(sigs[5].signature.contains("@decorator1"));
         assert!(sigs[5].signature.contains("@decorator2"));
-        assert!(sigs[5].signature.contains("def multi_decorated(x: int) -> int"));
+        assert!(
+            sigs[5]
+                .signature
+                .contains("def multi_decorated(x: int) -> int")
+        );
         assert_eq!(sigs[5].symbol_name, "multi_decorated");
 
         // Check regular method (no decorator)
@@ -966,11 +986,19 @@ pub async fn standalone_fn() -> Result<(), Error> {
         assert!(sigs[2].indent > sigs[1].indent); // Should be indented relative to impl
 
         // pub fn with_port(port: u16) -> Self
-        assert!(sigs[3].signature.starts_with("pub fn with_port(port: u16) -> Self"));
+        assert!(
+            sigs[3]
+                .signature
+                .starts_with("pub fn with_port(port: u16) -> Self")
+        );
         assert_eq!(sigs[3].symbol_name, "with_port");
 
         // fn private_method(&self) -> bool
-        assert!(sigs[4].signature.starts_with("fn private_method(&self) -> bool"));
+        assert!(
+            sigs[4]
+                .signature
+                .starts_with("fn private_method(&self) -> bool")
+        );
         assert_eq!(sigs[4].symbol_name, "private_method");
 
         // impl Default for Config
@@ -1023,7 +1051,11 @@ impl<T: Default> Default for Container<T> {
         assert_eq!(sigs[1].symbol_name, "Container");
 
         // pub fn new(value: T) -> Self
-        assert!(sigs[2].signature.starts_with("pub fn new(value: T) -> Self"));
+        assert!(
+            sigs[2]
+                .signature
+                .starts_with("pub fn new(value: T) -> Self")
+        );
         assert_eq!(sigs[2].symbol_name, "new");
 
         // pub fn get(&self) -> &T

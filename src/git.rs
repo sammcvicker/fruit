@@ -108,7 +108,6 @@ impl GitignoreFilter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

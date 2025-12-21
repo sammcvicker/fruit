@@ -109,10 +109,7 @@ impl MetadataBlock {
 
     /// Create a metadata block with only comment lines.
     pub fn from_comments(text: &str) -> Self {
-        let comment_lines = text
-            .lines()
-            .map(|line| MetadataLine::new(line))
-            .collect();
+        let comment_lines = text.lines().map(|line| MetadataLine::new(line)).collect();
         Self {
             comment_lines,
             type_lines: Vec::new(),

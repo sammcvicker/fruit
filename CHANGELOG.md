@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Moved regex compilation outside loop in Rust type extraction (#139)
+  - Static `RUST_IMPL_FN` regex pattern now compiled once using `LazyLock` instead of on every loop iteration
+  - Eliminates regex compilation overhead for every function inside every impl block
+  - Improves maintainability by following the consistent pattern used for all other regexes in the file
 - Reduced unnecessary string allocations throughout the codebase (#136)
   - Changed `TypeSignature::new()` to accept `impl Into<String>` for both parameters
   - Eliminated 27+ `.to_string()` calls in type extraction

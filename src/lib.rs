@@ -22,8 +22,7 @@ pub mod test_utils;
 
 // Re-exports from extractors module
 pub use extractors::{
-    ExtractionConfig,
-    Extractor,
+    ExtractionConfig, Extractor,
     comments::{CommentExtractor as ExtractorCommentExtractor, extract_first_comment},
     imports::{FileImports, ImportExtractor, extract_imports},
     todos::{TodoExtractor, TodoItem, extract_todos},
@@ -34,8 +33,8 @@ pub use extractors::{
 pub use git::GitignoreFilter;
 pub use language::Language;
 pub use metadata::{
-    CommentExtractor, LineStyle, MetadataBlock, MetadataConfig,
-    MetadataExtractor, MetadataLine, MetadataOrder,
+    CommentExtractor, LineStyle, MetadataBlock, MetadataConfig, MetadataExtractor, MetadataLine,
+    MetadataOrder,
 };
 pub use output::{
     MarkdownFormatter, OutputConfig, StreamingFormatter, TreeFormatter, print_json, print_markdown,

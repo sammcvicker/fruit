@@ -38,10 +38,7 @@ impl TreeFormatter {
 
         // Add comment lines
         if let Some(c) = comment {
-            block.comment_lines = c
-                .lines()
-                .map(|line| MetadataLine::new(line))
-                .collect();
+            block.comment_lines = c.lines().map(|line| MetadataLine::new(line)).collect();
         }
 
         // Add type signature lines with symbol highlighting
