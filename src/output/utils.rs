@@ -6,7 +6,30 @@ use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 use crate::metadata::{LineStyle, MetadataBlock, MetadataLine, MetadataOrder};
 
 /// Calculate the continuation prefix for lines below the filename.
-/// Used by both TreeFormatter and StreamingFormatter.
+///
+/// Creates a prefix string for metadata lines displayed below a file/directory entry,
+/// maintaining the visual tree structure. Used by both TreeFormatter and StreamingFormatter.
+///
+/// # Arguments
+///
+/// * `prefix` - The tree connector prefix from parent levels
+/// * `is_last` - Whether this is the last item in its directory (affects connector style)
+///
+/// # Returns
+///
+/// A string with either `"│   "` (for non-last items) or `"    "` (for last items),
+/// appended to the parent prefix to maintain visual tree alignment.
+///
+/// # Examples
+///
+/// ```
+/// # use fruit::output::continuation_prefix;
+/// // For a last item with no parent prefix
+/// assert_eq!(continuation_prefix("", true), "    ");
+///
+/// // For a non-last item with a parent prefix
+/// assert_eq!(continuation_prefix("│   ", false), "│   │   ");
+/// ```
 pub fn continuation_prefix(prefix: &str, is_last: bool) -> String {
     if is_last {
         format!("{}    ", prefix)
@@ -16,7 +39,35 @@ pub fn continuation_prefix(prefix: &str, is_last: bool) -> String {
 }
 
 /// Calculate the available width for text wrapping after accounting for prefixes.
-/// Returns None if wrapping is disabled or the available width is too small.
+///
+/// Subtracts the lengths of tree structure and metadata prefixes from the configured
+/// wrap width to determine how much space is available for actual content. Returns
+/// None if wrapping is disabled or the available width is too small to be useful.
+///
+/// # Arguments
+///
+/// * `base_wrap_width` - The configured wrap width from user settings (None = no wrapping)
+/// * `continuation_prefix_len` - Length of the tree continuation prefix (e.g., "│   ")
+/// * `meta_prefix_len` - Length of the metadata prefix (e.g., "# ")
+///
+/// # Returns
+///
+/// * `Some(width)` - The calculated available width for text content (> 10 characters)
+/// * `None` - If wrapping is disabled or resulting width would be <= 10 characters
+///
+/// # Examples
+///
+/// ```
+/// # use fruit::output::calculate_wrap_width;
+/// // With sufficient width
+/// assert_eq!(calculate_wrap_width(Some(100), 4, 2), Some(94));
+///
+/// // Width too small after subtracting prefixes
+/// assert_eq!(calculate_wrap_width(Some(15), 4, 2), None);
+///
+/// // Wrapping disabled
+/// assert_eq!(calculate_wrap_width(None, 4, 2), None);
+/// ```
 pub fn calculate_wrap_width(
     base_wrap_width: Option<usize>,
     continuation_prefix_len: usize,
@@ -28,6 +79,20 @@ pub fn calculate_wrap_width(
 }
 
 /// Check if the next non-empty line in a slice is indented relative to current indent.
+///
+/// Scans through a slice of metadata lines to determine if the next non-empty line
+/// has greater indentation than the current level. This is used to detect if a baseline
+/// item is a "group header" that should have a separator line before it.
+///
+/// # Arguments
+///
+/// * `lines` - Slice of metadata lines to scan (typically remaining lines after current)
+/// * `current_indent` - The indentation level to compare against
+///
+/// # Returns
+///
+/// `true` if the next non-empty line has indentation > `current_indent`, `false` otherwise
+/// (including when there are no more non-empty lines)
 pub fn has_indented_children(
     lines: &[&crate::metadata::MetadataLine],
     current_indent: usize,
@@ -39,8 +104,29 @@ pub fn has_indented_children(
 }
 
 /// Determine if a blank line should be inserted before a baseline item.
-/// Returns true when returning to baseline after indented content or when
-/// this baseline item has indented children (it's a group header).
+///
+/// Controls visual grouping in metadata blocks by inserting blank separator lines
+/// at strategic points. Separators appear when returning to baseline (indent 0) after
+/// indented content, or before baseline items that have indented children (group headers).
+///
+/// # Arguments
+///
+/// * `current_indent` - The indentation level of the current line (0 = baseline)
+/// * `prev_indent` - The indentation level of the previous line (None if first line)
+/// * `has_children` - Whether the current line has indented children following it
+///
+/// # Returns
+///
+/// `true` if a blank separator line should be inserted before this line, `false` otherwise
+///
+/// # Behavior
+///
+/// Returns `true` only when ALL of the following are true:
+/// - Current line is at baseline (indent = 0)
+/// - There was a previous line
+/// - Either:
+///   - Previous line was indented (returning to baseline), OR
+///   - Current line has indented children (is a group header)
 pub fn should_insert_group_separator(
     current_indent: usize,
     prev_indent: Option<usize>,
@@ -54,6 +140,27 @@ pub fn should_insert_group_separator(
 }
 
 /// Extract the first line from a string.
+///
+/// Returns the portion of the string up to (but not including) the first newline character.
+/// Used for displaying only the first line of multi-line metadata when not in full mode.
+///
+/// # Arguments
+///
+/// * `s` - The input string to extract from
+///
+/// # Returns
+///
+/// A string slice containing just the first line, or the entire string if it contains
+/// no newline characters. Returns empty string if input is empty.
+///
+/// # Examples
+///
+/// ```
+/// # use fruit::output::first_line;
+/// assert_eq!(first_line("First\nSecond\nThird"), "First");
+/// assert_eq!(first_line("Single line"), "Single line");
+/// assert_eq!(first_line(""), "");
+/// ```
 pub fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
 }
@@ -123,7 +230,45 @@ pub fn write_metadata_line_with_symbol(
 }
 
 /// Wrap text to fit within max_width, preferring word boundaries.
-/// Uses character count (not byte count) to properly handle UTF-8.
+///
+/// Breaks long text into multiple lines that fit within the specified width, attempting
+/// to break at word boundaries (whitespace) when possible. For words longer than max_width,
+/// performs character-level wrapping. Uses character count (not byte count) to properly
+/// handle UTF-8 multi-byte characters like emoji and CJK text.
+///
+/// # Arguments
+///
+/// * `text` - The text to wrap
+/// * `max_width` - Maximum width in characters per line (0 = no wrapping)
+///
+/// # Returns
+///
+/// A vector of strings, each fitting within max_width characters. Returns at least
+/// one string (which may be empty if input was empty).
+///
+/// # Behavior
+///
+/// - If `max_width` is 0, returns the original text unwrapped
+/// - Splits on whitespace to preserve word boundaries
+/// - Words longer than max_width are split at character boundaries
+/// - UTF-8 aware: counts characters, not bytes (emoji count as 1 character)
+///
+/// # Examples
+///
+/// ```
+/// # use fruit::output::wrap_text;
+/// // Word boundary wrapping
+/// let wrapped = wrap_text("hello world foo", 10);
+/// assert_eq!(wrapped, vec!["hello", "world foo"]);
+///
+/// // Character-level wrapping for long words
+/// let wrapped = wrap_text("verylongword", 5);
+/// assert_eq!(wrapped, vec!["veryl", "ongwo", "rd"]);
+///
+/// // UTF-8 handling (emoji are 1 character each)
+/// let wrapped = wrap_text("🎉🎊🎁🎂🎃", 3);
+/// assert_eq!(wrapped, vec!["🎉🎊🎁", "🎂🎃"]);
+/// ```
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return vec![text.to_string()];
@@ -196,7 +341,27 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 }
 
 /// Write a rendered line with colors to stdout.
-/// Used by both StreamingFormatter and TreeFormatter.
+///
+/// Outputs a single rendered metadata line (either a separator or content line) to
+/// the terminal with appropriate colors and prefixes. Used by both StreamingFormatter
+/// and TreeFormatter for consistent rendering.
+///
+/// # Arguments
+///
+/// * `stdout` - Mutable reference to the terminal output stream
+/// * `line` - The rendered line to write (separator or content with styling)
+/// * `cont_prefix` - The continuation prefix for tree structure (e.g., "│   ")
+/// * `meta_prefix` - The metadata type prefix (e.g., "# " for comments)
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an IO error if writing to stdout fails
+///
+/// # Behavior
+///
+/// - For `RenderedLine::Separator`: writes just the continuation prefix and newline
+/// - For `RenderedLine::Content`: writes continuation prefix, metadata prefix, colored
+///   content (with symbol highlighting if present), and newline
 pub fn write_rendered_line(
     stdout: &mut StandardStream,
     line: &RenderedLine,
@@ -231,7 +396,26 @@ pub fn write_rendered_line(
 }
 
 /// Write inline content with colors (first line on same line as filename).
-/// Used by both StreamingFormatter and TreeFormatter.
+///
+/// Outputs the first line of metadata on the same line as the filename, typically used
+/// when displaying a single-line comment or when not in full metadata mode. Used by both
+/// StreamingFormatter and TreeFormatter for consistent inline rendering.
+///
+/// # Arguments
+///
+/// * `stdout` - Mutable reference to the terminal output stream
+/// * `line` - The rendered line to write inline (typically first line of metadata)
+/// * `meta_prefix` - The metadata type prefix (e.g., "# " for comments)
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an IO error if writing to stdout fails
+///
+/// # Behavior
+///
+/// - Only writes content if `line` is `RenderedLine::Content` (ignores separators)
+/// - Writes two spaces, metadata prefix, then colored content with symbol highlighting
+/// - Ends the filename line with a newline and resets terminal colors
 pub fn write_inline_content(
     stdout: &mut StandardStream,
     line: &RenderedLine,
@@ -260,7 +444,33 @@ pub fn write_inline_content(
 }
 
 /// Print a metadata block with colors to stdout.
-/// Used by both StreamingFormatter and TreeFormatter.
+///
+/// High-level function that renders and outputs a complete metadata block (comments, types,
+/// TODOs, imports) for a file entry. Handles both inline and block display modes, text
+/// wrapping, and visual grouping. Used by both StreamingFormatter and TreeFormatter.
+///
+/// # Arguments
+///
+/// * `stdout` - Mutable reference to the terminal output stream
+/// * `block` - The metadata block to render (contains comments, types, etc.)
+/// * `prefix` - Tree connector prefix from parent levels
+/// * `is_last` - Whether this is the last item in its directory
+/// * `meta_prefix` - Metadata type prefix (e.g., "# " for comments)
+/// * `order` - Display order for metadata sections (comments first vs types first)
+/// * `show_full` - Whether to show full metadata (true) or just first line (false)
+/// * `wrap_width` - Optional text wrapping width in characters
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an IO error if writing to stdout fails
+///
+/// # Behavior
+///
+/// Delegates to `render_metadata_block()` to determine display strategy, then outputs:
+/// - `Empty`: Just ends the filename line with newline
+/// - `Inline`: Shows first line inline on the same line as filename
+/// - `InlineWithBlock`: Shows first line inline, remaining lines in block below
+/// - `Block`: Shows all lines in a block below the filename
 pub fn print_metadata_block(
     stdout: &mut StandardStream,
     block: &MetadataBlock,
@@ -338,7 +548,38 @@ pub enum MetadataRenderResult {
 }
 
 /// Render a metadata block into a structured result that formatters can write.
-/// This centralizes the logic for determining inline vs block display and group separators.
+///
+/// Core rendering logic that determines how to display a metadata block (inline vs block,
+/// with or without separators) and produces a structured result with pre-styled lines.
+/// This centralizes the logic for display strategy and group separators, allowing both
+/// StreamingFormatter and TreeFormatter to use the same rendering rules.
+///
+/// # Arguments
+///
+/// * `block` - The metadata block to render (contains comments, types, TODOs, imports)
+/// * `order` - Display order for metadata sections (comments first vs types first)
+/// * `show_full` - Whether to show all metadata (true) or just first line (false)
+/// * `wrap_width` - Optional text wrapping width in characters (after prefix adjustment)
+///
+/// # Returns
+///
+/// A `MetadataRenderResult` enum indicating the display strategy:
+/// - `Empty`: No metadata to display
+/// - `Inline { first }`: Single line to show inline with filename
+/// - `InlineWithBlock { first, block_lines }`: First line inline, rest below
+/// - `Block { lines }`: All lines displayed in a block below filename
+///
+/// # Behavior
+///
+/// Display strategy is determined by:
+/// - If block is empty → `Empty`
+/// - If not in full mode → `Inline` with first line only
+/// - If total is 1 line → `Inline`
+/// - If first section is single line and more content follows → `InlineWithBlock`
+/// - Otherwise → `Block` with all lines below
+///
+/// Group separators are inserted automatically to visually organize metadata sections
+/// and hierarchical structures.
 pub fn render_metadata_block(
     block: &MetadataBlock,
     order: MetadataOrder,
