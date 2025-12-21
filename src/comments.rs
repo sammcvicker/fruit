@@ -29,6 +29,7 @@ use std::path::Path;
 
 use crate::file_utils::read_source_file;
 use crate::language::Language;
+use crate::string_utils::strip_any_prefix;
 
 /// Helper function to extract block comments.
 ///
@@ -448,6 +449,9 @@ fn extract_javadoc_comment(content: &str) -> Option<String> {
     extract_line_comments(content.lines(), "//", true, false, None::<fn(&str) -> bool>)
 }
 
+/// PHP opening tag prefixes (order matters: longer prefixes first)
+const PHP_TAG_PREFIXES: &[&str] = &["<?php", "<?"];
+
 /// Extract PHP comments.
 ///
 /// Handles PHP opening tags:
@@ -461,13 +465,7 @@ fn extract_javadoc_comment(content: &str) -> Option<String> {
 fn extract_php_comment(content: &str) -> Option<String> {
     // Skip <?php or <? opening tag
     let content = content.trim_start();
-    let content = if let Some(stripped) = content.strip_prefix("<?php") {
-        stripped
-    } else if let Some(stripped) = content.strip_prefix("<?") {
-        stripped
-    } else {
-        content
-    };
+    let content = strip_any_prefix(content, PHP_TAG_PREFIXES);
 
     // Try PHPDoc block comment first, filtering @ annotations
     let filter_annotations = |line: &str| !line.starts_with('@');

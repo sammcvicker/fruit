@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use crate::file_utils::read_source_file;
 use crate::language::Language;
+use crate::string_utils::strip_any_prefix;
 
 /// Categorized imports from a source file.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -119,23 +120,14 @@ fn categorize_rust_import(path: &str, imports: &mut FileImports) {
     }
 }
 
+/// Prefixes to strip from Rust paths for display simplification
+const RUST_PATH_PREFIXES: &[&str] = &["std::", "core::", "alloc::", "crate::", "self::"];
+
 /// Simplify a Rust path for display (e.g., std::path::Path -> path::Path)
 fn simplify_path(path: &str) -> String {
     // For std/core/alloc/crate/self, remove the prefix
-    if let Some(stripped) = path.strip_prefix("std::") {
-        stripped.to_string()
-    } else if let Some(stripped) = path.strip_prefix("core::") {
-        stripped.to_string()
-    } else if let Some(stripped) = path.strip_prefix("alloc::") {
-        stripped.to_string()
-    } else if let Some(stripped) = path.strip_prefix("crate::") {
-        stripped.to_string()
-    } else if let Some(stripped) = path.strip_prefix("self::") {
-        stripped.to_string()
-    } else {
-        // Keep super:: and other prefixes for clarity
-        path.to_string()
-    }
+    // Keep super:: and other prefixes for clarity
+    strip_any_prefix(path, RUST_PATH_PREFIXES).to_string()
 }
 
 // =============================================================================

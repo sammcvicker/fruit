@@ -8,6 +8,7 @@ pub mod language;
 pub mod metadata;
 pub mod output;
 pub mod stats;
+pub mod string_utils;
 pub mod todos;
 pub mod tree;
 pub mod types;
